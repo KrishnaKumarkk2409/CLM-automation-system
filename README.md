@@ -1,8 +1,16 @@
-# Contract Lifecycle Management (CLM) Automation System
+# 🤖 Contract Lifecycle Management (CLM) Automation System
 
-![CLM System](https://img.shields.io/badge/CLM-Automation-blue) ![Python](https://img.shields.io/badge/Python-3.9+-green) ![LangChain](https://img.shields.io/badge/LangChain-Enabled-orange) ![Supabase](https://img.shields.io/badge/Supabase-Database-purple)
+![CLM System](https://img.shields.io/badge/CLM-Automation-blue) ![Python](https://img.shields.io/badge/Python-3.9+-green) ![LangChain](https://img.shields.io/badge/LangChain-Enabled-orange) ![Supabase](https://img.shields.io/badge/Supabase-Database-purple) ![Next.js](https://img.shields.io/badge/Next.js-14.0+-black) ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
 
-A comprehensive AI-powered Contract Lifecycle Management system that automates contract analysis, monitoring, and reporting using LangChain, OpenAI, and Supabase.
+> **AI-Powered Contract Intelligence Platform** - Streamlining contract management with cutting-edge AI automation, intelligent document processing, and proactive monitoring.
+
+## 📋 Project Context
+
+This system was developed as part of a technical assessment for **DeepRunner AI** - an enterprise AI automation company that empowers teams with AI agent solutions. The project demonstrates the implementation of a complete Contract Lifecycle Management platform using modern AI technologies and enterprise-grade architecture.
+
+**🎯 Challenge**: Build an intelligent CLM platform that can automatically ingest, understand, alert, and provide insights on contract data across various departments.
+
+**✨ Solution**: A comprehensive AI-powered system featuring RAG pipelines, LangChain agents, real-time monitoring, and both Streamlit and Next.js interfaces.
 
 # Quick Start
 
