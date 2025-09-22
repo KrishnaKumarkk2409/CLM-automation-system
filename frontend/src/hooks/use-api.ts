@@ -1,0 +1,178 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+// Create axios instance with default config
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Request interceptor for debugging
+api.interceptors.request.use((config) => {
+  console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`)
+  return config
+})
+
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error.response?.data || error.message)
+    throw error
+  }
+)
+
+// Types
+export interface SystemStats {
+  total_documents: number
+  active_contracts: number
+  total_chunks: number
+  system_status: string
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  sources?: any[]
+  timestamp?: Date
+  message_id?: string
+}
+
+export interface ChatResponse {
+  response: string
+  sources: any[]
+  conversation_id: string
+  message_id: string
+  timestamp: string
+}
+
+export interface DocumentSearchResult {
+  documents: any[]
+}
+
+export interface AnalyticsData {
+  contract_timeline: any[]
+  department_distribution: Record<string, number>
+  expiring_contracts: number
+  total_value: number
+}
+
+// Hooks
+export function useSystemStats() {
+  return useQuery({
+    queryKey: ['system-stats'],
+    queryFn: async (): Promise<SystemStats> => {
+      const response = await api.get('/stats')
+      return response.data
+    },
+    refetchInterval: 30000, // Refetch every 30 seconds
+  })
+}
+
+export function useHealthCheck() {
+  return useQuery({
+    queryKey: ['health'],
+    queryFn: async () => {
+      const response = await api.get('/health')
+      return response.data
+    },
+    refetchInterval: 60000, // Refetch every minute
+  })
+}
+
+export function useSendMessage() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ message, conversationId }: { message: string; conversationId?: string }): Promise<ChatResponse> => {
+      const response = await api.post('/chat', {
+        message,
+        conversation_id: conversationId,
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      // Invalidate any relevant queries
+      queryClient.invalidateQueries({ queryKey: ['chat-history'] })
+    },
+  })
+}
+
+export function useUploadDocuments() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (files: File[]) => {
+      const formData = new FormData()
+      files.forEach((file) => {
+        formData.append('files', file)
+      })
+
+      const response = await api.post('/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      // Invalidate system stats to reflect new documents
+      queryClient.invalidateQueries({ queryKey: ['system-stats'] })
+    },
+  })
+}
+
+export function useSearchDocuments() {
+  return useMutation({
+    mutationFn: async ({ query, limit = 10 }: { query: string; limit?: number }): Promise<DocumentSearchResult> => {
+      const response = await api.post('/search', { query, limit })
+      return response.data
+    },
+  })
+}
+
+export function useGenerateReport() {
+  return useMutation({
+    mutationFn: async (params: {
+      email: string
+      include_expiring?: boolean
+      include_conflicts?: boolean
+      include_analytics?: boolean
+    }) => {
+      const response = await api.post('/generate-report', params)
+      return response.data
+    },
+  })
+}
+
+export function useAnalytics() {
+  return useQuery({
+    queryKey: ['analytics'],
+    queryFn: async (): Promise<AnalyticsData> => {
+      const response = await api.get('/analytics')
+      return response.data
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
+// WebSocket hook for real-time chat
+export function useWebSocket(conversationId: string) {
+  // This would implement WebSocket connection
+  // For now, returning a placeholder
+  return {
+    socket: null,
+    isConnected: false,
+    sendMessage: (message: string) => {
+      console.log('WebSocket send:', message)
+    },
+    disconnect: () => {
+      console.log('WebSocket disconnect')
+    },
+  }
+}

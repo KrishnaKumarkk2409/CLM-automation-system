@@ -1,0 +1,22 @@
+From: legal@yourcompany.com
+To: contact@tech.com
+Subject: Contract Amendment - TechCorp Inc Service Agreement
+Date: 07/21/2025
+
+Dear TechCorp Inc Team,
+
+We are following up on the service agreement dated 06/01/2025.
+
+Please confirm the following contact details are current:
+- Email: contact@tech.com
+- Phone: 555-864-1362
+- Address: 100 Business St, Suite 80, City, State 45055
+
+The contract is set to expire on 06/01/2027.
+We will begin renewal discussions on 05/02/2027.
+
+Please reach out if you have any questions.
+
+Best regards,
+Legal Department
+YourCompany Inc.

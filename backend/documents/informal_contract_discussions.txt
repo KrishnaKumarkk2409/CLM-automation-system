@@ -1,0 +1,48 @@
+
+        Contract Discussion - Slack Thread Archive
+        Channel: #legal-contracts
+        Date Range: Last 30 days
+        
+        @sarah.legal: Hey team, quick update on contracts
+        - TechCorp renewal looking good
+        - They want 2-year term this time
+        - Pricing increase reasonable at 5%
+        
+        @mike.procurement: Sounds good. What about DataSystems?
+        Their SLA has been solid, no issues
+        
+        @lisa.finance: Budget wise we're okay with both renewals
+        CloudVentures is the one I'm worried about - they've had billing errors
+        
+        @tom.it: From technical side:
+        - TechCorp modules work great, approve new ones
+        - DataSystems uptime has been 99.8% - excellent  
+        - CloudVentures had that outage last month...
+        
+        @sarah.legal: Speaking of CloudVentures, found discrepancy in their contact info
+        Some docs have different email/address than others
+        Need to verify which is current
+        
+        @mike.procurement: I'll reach out to them directly
+        Their main contact is usually responsive
+        
+        @lisa.finance: FYI - CloudVentures contract expires in 2 months
+        If we're renewing need to start talks soon
+        
+        @sarah.legal: Good catch! Adding to urgent list
+        Will send renewal notice this week
+        
+        @tom.it: Also heads up - InnovateLabs asked about early renewal
+        They're happy with current NDA terms
+        
+        @mike.procurement: That's great, one less thing to negotiate
+        Simple renewal should be quick
+        
+        @sarah.legal: Agreed. Summary of priorities:
+        1. CloudVentures renewal (urgent - expires soon)
+        2. TechCorp 2-year renewal (in progress)  
+        3. DataSystems renewal (routine)
+        4. InnovateLabs NDA renewal (simple)
+        
+        All: Sounds like a plan! 👍
+        
