@@ -82,7 +82,15 @@ body {
   }
   
   .chat-bubble-user {
-    @apply bg-black text-white px-4 py-2 max-w-xs ml-auto border border-black;
+    background-color: #fefdfb; /* cream/off-white */
+    border: 1px solid #f3f1ee; /* light cream border */
+    color: #374151; /* dark gray text */
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    max-width: 20rem; /* similar to max-w-xs */
+    margin-left: auto; /* align right */
   }
   
   .chat-bubble-assistant {

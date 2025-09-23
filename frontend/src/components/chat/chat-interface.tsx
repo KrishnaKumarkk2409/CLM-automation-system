@@ -18,7 +18,7 @@ import {
   PaperClipIcon,
   Bars3BottomLeftIcon
 } from '@heroicons/react/24/outline'
-import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments, useChatHistory } from '@/hooks/use-api'
+import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments, useChatHistory, useChatHistoryPaginated, ChatHistoryResponse } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
 import { useDropzone } from 'react-dropzone'
 import DocumentPreview from '../document/document-preview'
@@ -46,7 +46,10 @@ export default function ChatInterface() {
   const sendMessage = useSendMessage()
   const uploadDocs = useUploadDocuments()
   const searchDocs = useSearchDocuments()
-  const { data: historyData } = useChatHistory()
+  const { data: historyData, isLoading: historyLoading } = useChatHistory()
+  const loadMoreHistory = useChatHistoryPaginated()
+  const [allHistoryMessages, setAllHistoryMessages] = useState<ChatHistoryResponse['messages']>([])
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -56,11 +59,19 @@ export default function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
+  // Initialize history messages when data loads
+  useEffect(() => {
+    if (historyData?.messages) {
+      setAllHistoryMessages(historyData.messages)
+      setHistoryCursor(historyData.pagination?.next_cursor || null)
+    }
+  }, [historyData])
+
   // Load messages for selected conversation from history
   useEffect(() => {
-    if (!historyData?.messages) return
+    if (!allHistoryMessages.length) return
     if (!conversationId) return
-    const convMessages = historyData.messages
+    const convMessages = allHistoryMessages
       .filter(m => m.conversation_id === conversationId)
       .map(m => ({
         role: m.role,
@@ -70,7 +81,7 @@ export default function ChatInterface() {
     if (convMessages.length) {
       setMessages(convMessages)
     }
-  }, [historyData, conversationId])
+  }, [allHistoryMessages, conversationId])
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || sendMessage.isPending) return
@@ -112,7 +123,7 @@ export default function ChatInterface() {
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -198,7 +209,7 @@ export default function ChatInterface() {
   // Build conversation list from history
   function buildConversations() {
     const map: Record<string, { id: string; last: string; count: number; updatedAt: string }> = {}
-    const list = historyData?.messages || []
+    const list = allHistoryMessages || []
     for (const m of list) {
       const item = map[m.conversation_id] || { id: m.conversation_id, last: '', count: 0, updatedAt: m.created_at }
       item.count += 1
@@ -209,6 +220,25 @@ export default function ChatInterface() {
     return Object.values(map).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   }
   const conversations = buildConversations()
+
+  // Handle loading more history
+  const handleLoadMoreHistory = async () => {
+    if (!historyCursor || loadMoreHistory.isPending) return
+
+    try {
+      const result = await loadMoreHistory.mutateAsync({
+        cursor: historyCursor,
+        limit: 50
+      })
+
+      // Append new messages to existing ones
+      setAllHistoryMessages(prev => [...prev, ...result.messages])
+      setHistoryCursor(result.pagination?.next_cursor || null)
+    } catch (error) {
+      console.error('Failed to load more history:', error)
+      toast.error('Failed to load more chat history')
+    }
+  }
 
   return (
     <div className="h-full bg-white">
@@ -228,16 +258,34 @@ export default function ChatInterface() {
               setMessages([])
             }}>New</button>
           </div>
-          <div className="overflow-auto h-[calc(100%-48px)]">
-            {conversations.map(conv => (
-              <button key={conv.id} onClick={() => setConversationId(conv.id)} className={`w-full text-left p-3 border-b hover:bg-white ${conversationId === conv.id ? 'bg-white' : ''}`}>
-                <div className="text-xs text-gray-500 truncate">{conv.id}</div>
-                <div className="text-sm text-black truncate mt-1">{conv.last}</div>
-                <div className="text-xs text-gray-400 mt-1">{new Date(conv.updatedAt).toLocaleString()}</div>
-              </button>
-            ))}
-            {conversations.length === 0 && (
-              <div className="p-4 text-xs text-gray-500">No messages yet</div>
+          <div className="overflow-auto h-[calc(100%-48px)] flex flex-col">
+            <div className="flex-1">
+              {historyLoading && conversations.length === 0 && (
+                <div className="p-4 text-xs text-gray-500 text-center">Loading chat history...</div>
+              )}
+              {conversations.map(conv => (
+                <button key={conv.id} onClick={() => setConversationId(conv.id)} className={`w-full text-left p-3 border-b hover:bg-white ${conversationId === conv.id ? 'bg-white' : ''}`}>
+                  <div className="text-xs text-gray-500 truncate">{conv.id}</div>
+                  <div className="text-sm text-black truncate mt-1">{conv.last}</div>
+                  <div className="text-xs text-gray-400 mt-1">{new Date(conv.updatedAt).toLocaleString()}</div>
+                </button>
+              ))}
+              {conversations.length === 0 && !historyLoading && (
+                <div className="p-4 text-xs text-gray-500">No messages yet</div>
+              )}
+            </div>
+
+            {/* Load More Button */}
+            {historyCursor && (
+              <div className="border-t border-gray-200 p-3">
+                <button
+                  onClick={handleLoadMoreHistory}
+                  disabled={loadMoreHistory.isPending}
+                  className="w-full text-xs bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-2 text-center text-gray-700 transition-colors"
+                >
+                  {loadMoreHistory.isPending ? 'Loading...' : 'Load More History'}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -377,7 +425,7 @@ export default function ChatInterface() {
                   ref={inputRef}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleKeyDown}
                   placeholder="Ask me anything about your contracts..."
                   className="input-field resize-none min-h-[44px] lg:min-h-[52px] max-h-32 py-3 lg:py-4 text-sm lg:text-base"
                   rows={1}

@@ -292,20 +292,67 @@ export function useWebSocket(conversationId: string) {
   }
 }
 
-// Chat history
-export function useChatHistory(conversationId?: string) {
+// Chat history types
+export interface ChatHistoryResponse {
+  messages: {
+    conversation_id: string
+    role: 'user' | 'assistant'
+    content: string
+    created_at: string
+    id?: string
+  }[]
+  pagination: {
+    next_cursor: string | null
+    has_more: boolean
+    limit: number
+  }
+}
+
+// Chat history with pagination support
+export function useChatHistory(conversationId?: string, limit: number = 50) {
   return useQuery({
-    queryKey: ['chat-history', conversationId || 'all'],
-    queryFn: async () => {
+    queryKey: ['chat-history', conversationId || 'all', limit],
+    queryFn: async (): Promise<ChatHistoryResponse> => {
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
+      const params: Record<string, any> = { limit }
+      if (conversationId) {
+        params.conversation_id = conversationId
+      }
       const response = await api.get('/chat-history', {
-        params: conversationId ? { conversation_id: conversationId } : undefined,
+        params,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
-      return response.data as { messages: { conversation_id: string; role: 'user' | 'assistant'; content: string; created_at: string }[] }
+      return response.data
     },
     staleTime: 30 * 1000,
     enabled: true,
+  })
+}
+
+// Hook for paginated chat history (for loading more messages)
+export function useChatHistoryPaginated() {
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      cursor,
+      limit = 50
+    }: {
+      conversationId?: string
+      cursor: string
+      limit?: number
+    }): Promise<ChatHistoryResponse> => {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      const params: Record<string, any> = { limit, cursor }
+      if (conversationId) {
+        params.conversation_id = conversationId
+      }
+      const response = await api.get('/chat-history', {
+        params,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      })
+      return response.data
+    },
   })
 }

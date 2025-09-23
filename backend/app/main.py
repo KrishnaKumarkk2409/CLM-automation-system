@@ -306,27 +306,8 @@ async def chat_endpoint(chat_request: ChatMessage, request: Request):
         # Persist session and incoming user message (best-effort)
         try:
             db = components["db_manager"]
-            if user_id:
-                # Ensure chat session exists
-                try:
-                    db.client.table('chat_sessions').upsert({
-                        'id': conversation_id,
-                        'user_id': user_id,
-                        'updated_at': datetime.now().isoformat()
-                    }).execute()
-                except Exception as e:
-                    logger.debug(f"chat_sessions upsert skipped: {e}")
-            # Insert user message
-            try:
-                db.client.table('chat_messages').insert({
-                    'conversation_id': conversation_id,
-                    'role': 'user',
-                    'content': chat_request.message,
-                    'created_at': datetime.now().isoformat(),
-                    'user_id': user_id
-                }).execute()
-            except Exception as e:
-                logger.debug(f"chat_messages insert (user) skipped: {e}")
+            # Insert user message using database manager method
+            db.insert_chat_message(conversation_id, 'user', chat_request.message, user_id)
         except Exception as e:
             logger.debug(f"Chat persistence setup skipped: {e}")
         
@@ -379,13 +360,7 @@ async def chat_endpoint(chat_request: ChatMessage, request: Request):
         # Persist assistant message
         try:
             db = components["db_manager"]
-            db.client.table('chat_messages').insert({
-                'conversation_id': conversation_id,
-                'role': 'assistant',
-                'content': response_data["answer"],
-                'created_at': datetime.now().isoformat(),
-                'user_id': user_id
-            }).execute()
+            db.insert_chat_message(conversation_id, 'assistant', response_data["answer"], user_id)
         except Exception as e:
             logger.debug(f"chat_messages insert (assistant) skipped: {e}")
 
@@ -403,23 +378,35 @@ async def chat_endpoint(chat_request: ChatMessage, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chat-history")
-async def chat_history(conversation_id: Optional[str] = None, request: Request = None):
+async def chat_history(
+    conversation_id: Optional[str] = None,
+    request: Request = None,
+    limit: int = 50,
+    offset: int = 0,
+    cursor: Optional[str] = None
+):
     try:
         if "db_manager" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
+
         user_id = _get_user_id_from_request(request) if request else None
         db = components["db_manager"]
-        query = db.client.table('chat_messages').select('conversation_id, role, content, created_at')
-        if conversation_id:
-            query = query.eq('conversation_id', conversation_id)
-        elif user_id:
-            # Return latest messages for this user across sessions
-            query = query.eq('user_id', user_id)
-        result = query.order('created_at', desc=False).limit(200).execute()
-        return {"messages": result.data}
+
+        # Validate limit to prevent excessive queries
+        limit = min(max(limit, 1), 100)  # Between 1 and 100
+
+        # Use the database manager method for chat history
+        return db.get_chat_history(conversation_id, user_id, limit, cursor)
     except Exception as e:
         logger.error(f"Chat history error: {e}")
-        return {"messages": []}
+        return {
+            "messages": [],
+            "pagination": {
+                "next_cursor": None,
+                "has_more": False,
+                "limit": limit
+            }
+        }
 
 @app.websocket("/ws/{conversation_id}")
 async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
