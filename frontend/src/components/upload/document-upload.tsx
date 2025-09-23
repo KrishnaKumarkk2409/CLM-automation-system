@@ -8,9 +8,17 @@ import {
   XMarkIcon,
   CheckCircleIcon,
   ExclamationCircleIcon,
-  CogIcon
+  CogIcon,
+  FolderIcon,
+  FolderPlusIcon,
+  ListBulletIcon,
+  Squares2X2Icon,
+  EyeIcon,
+  PencilIcon,
+  TrashIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline'
-import { useUploadDocuments } from '@/hooks/use-api'
+import { useUploadDocuments, useFrontendDocumentsList } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
 
 interface UploadSettings {
@@ -18,6 +26,24 @@ interface UploadSettings {
   chunkSize: number
   enableOCR: boolean
   autoProcess: boolean
+}
+
+interface Folder {
+  id: string
+  name: string
+  parentId: string | null
+  documents: string[]
+  createdAt: Date
+}
+
+interface Document {
+  id: string
+  filename: string
+  fileType: string
+  uploadedAt: string
+  size: string
+  status: string
+  folderId?: string
 }
 
 export default function DocumentUpload() {
@@ -31,8 +57,14 @@ export default function DocumentUpload() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [uploadResults, setUploadResults] = useState<any[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  const [folders, setFolders] = useState<Folder[]>([])  
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [showCreateFolder, setShowCreateFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
   
   const uploadMutation = useUploadDocuments()
+  const { data: documentsData, refetch: refetchDocuments } = useFrontendDocumentsList()
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setUploadedFiles(prev => [...prev, ...acceptedFiles])
@@ -73,6 +105,10 @@ export default function DocumentUpload() {
         toast.error(`Failed to process ${failCount} documents`)
       }
       
+      // Clear uploaded files and refresh document list
+      setUploadedFiles([])
+      refetchDocuments()
+      
     } catch (error) {
       toast.error('Upload failed')
       console.error('Upload error:', error)
@@ -90,18 +126,55 @@ export default function DocumentUpload() {
     setUploadResults([])
   }
 
+  // Folder management functions
+  const createFolder = () => {
+    if (!newFolderName.trim()) return
+    
+    const newFolder: Folder = {
+      id: Date.now().toString(),
+      name: newFolderName.trim(),
+      parentId: currentFolderId,
+      documents: [],
+      createdAt: new Date()
+    }
+    
+    setFolders(prev => [...prev, newFolder])
+    setNewFolderName('')
+    setShowCreateFolder(false)
+    toast.success(`Folder "${newFolder.name}" created successfully`)
+  }
+  
+  const moveDocumentToFolder = (documentId: string, folderId: string | null) => {
+    // This would typically make an API call to update the document's folder
+    toast.success('Document moved successfully')
+  }
+  
+  const deleteFolder = (folderId: string) => {
+    const folder = folders.find(f => f.id === folderId)
+    if (folder && folder.documents.length > 0) {
+      toast.error('Cannot delete folder with documents. Move documents first.')
+      return
+    }
+    
+    setFolders(prev => prev.filter(f => f.id !== folderId))
+    if (currentFolderId === folderId) {
+      setCurrentFolderId(null)
+    }
+    toast.success('Folder deleted successfully')
+  }
+
   return (
-    <div className="h-full overflow-auto bg-gradient-to-br from-primary-50 via-white to-accent-50">
+    <div className="h-full overflow-auto bg-white">
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex justify-between items-center mb-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <h1 className="text-3xl font-bold text-secondary-900 mb-2">
+            <h1 className="text-3xl font-bold text-black mb-2">
               Document Upload & Processing
             </h1>
-            <p className="text-secondary-600">
+            <p className="text-gray-600">
               Upload contracts and documents for AI analysis
             </p>
           </motion.div>
@@ -126,7 +199,7 @@ export default function DocumentUpload() {
               exit={{ height: 0, opacity: 0 }}
               className="card p-6 mb-6 overflow-hidden"
             >
-              <h2 className="text-lg font-semibold text-secondary-900 mb-4">Upload Settings</h2>
+              <h2 className="text-lg font-semibold text-black mb-4">Upload Settings</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
@@ -135,11 +208,11 @@ export default function DocumentUpload() {
                       type="checkbox"
                       checked={uploadSettings.extractContracts}
                       onChange={(e) => setUploadSettings(prev => ({ ...prev, extractContracts: e.target.checked }))}
-                      className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                      className="border-gray-300 text-black focus:ring-gray-400"
                     />
                     <div>
-                      <span className="text-sm font-medium text-secondary-900">Extract Contract Details</span>
-                      <p className="text-xs text-secondary-600">Automatically identify and extract contract information</p>
+                      <span className="text-sm font-medium text-black">Extract Contract Details</span>
+                      <p className="text-xs text-gray-600">Automatically identify and extract contract information</p>
                     </div>
                   </label>
                   
@@ -148,18 +221,18 @@ export default function DocumentUpload() {
                       type="checkbox"
                       checked={uploadSettings.enableOCR}
                       onChange={(e) => setUploadSettings(prev => ({ ...prev, enableOCR: e.target.checked }))}
-                      className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                      className="border-gray-300 text-black focus:ring-gray-400"
                     />
                     <div>
-                      <span className="text-sm font-medium text-secondary-900">Enable OCR</span>
-                      <p className="text-xs text-secondary-600">Extract text from scanned documents and images</p>
+                      <span className="text-sm font-medium text-black">Enable OCR</span>
+                      <p className="text-xs text-gray-600">Extract text from scanned documents and images</p>
                     </div>
                   </label>
                 </div>
                 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-secondary-900 mb-2">
+                    <label className="block text-sm font-medium text-black mb-2">
                       Chunk Size: {uploadSettings.chunkSize}
                     </label>
                     <input
@@ -171,7 +244,7 @@ export default function DocumentUpload() {
                       onChange={(e) => setUploadSettings(prev => ({ ...prev, chunkSize: parseInt(e.target.value) }))}
                       className="w-full"
                     />
-                    <p className="text-xs text-secondary-600 mt-1">Size of text chunks for processing (500-2000 characters)</p>
+                    <p className="text-xs text-gray-600 mt-1">Size of text chunks for processing (500-2000 characters)</p>
                   </div>
                   
                   <label className="flex items-center space-x-3">
@@ -179,11 +252,11 @@ export default function DocumentUpload() {
                       type="checkbox"
                       checked={uploadSettings.autoProcess}
                       onChange={(e) => setUploadSettings(prev => ({ ...prev, autoProcess: e.target.checked }))}
-                      className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                      className="border-gray-300 text-black focus:ring-gray-400"
                     />
                     <div>
-                      <span className="text-sm font-medium text-secondary-900">Auto-process on Upload</span>
-                      <p className="text-xs text-secondary-600">Start processing immediately after upload</p>
+                      <span className="text-sm font-medium text-black">Auto-process on Upload</span>
+                      <p className="text-xs text-gray-600">Start processing immediately after upload</p>
                     </div>
                   </label>
                 </div>
@@ -327,6 +400,227 @@ export default function DocumentUpload() {
             </div>
           </motion.div>
         )}
+        
+        {/* Document Management Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card p-6 mt-6"
+        >
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-xl font-semibold text-black mb-2">
+                Document Library
+              </h2>
+              <p className="text-gray-600">
+                Manage your uploaded documents with folders and organization
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowCreateFolder(true)}
+                className="btn-ghost flex items-center space-x-2"
+              >
+                <FolderPlusIcon className="h-4 w-4" />
+                <span>New Folder</span>
+              </button>
+              <div className="border-l border-gray-300 pl-2 ml-2">
+                <button
+                  onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+                  className="p-2 hover:bg-gray-100 border border-gray-300 transition-colors"
+                  title={`Switch to ${viewMode === 'grid' ? 'list' : 'grid'} view`}
+                >
+                  {viewMode === 'grid' ? (
+                    <ListBulletIcon className="h-4 w-4" />
+                  ) : (
+                    <Squares2X2Icon className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Create Folder Modal */}
+          {showCreateFolder && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-lg max-w-md w-full p-6"
+              >
+                <h3 className="text-lg font-semibold text-black mb-4">Create New Folder</h3>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Folder Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    className="input-field w-full"
+                    placeholder="Enter folder name..."
+                    onKeyPress={(e) => e.key === 'Enter' && createFolder()}
+                  />
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <button
+                    onClick={() => {
+                      setShowCreateFolder(false)
+                      setNewFolderName('')
+                    }}
+                    className="btn-ghost"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createFolder}
+                    disabled={!newFolderName.trim()}
+                    className="btn-primary disabled:opacity-50"
+                  >
+                    Create
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+          
+          {/* Folder Navigation */}
+          {currentFolderId && (
+            <div className="mb-4 p-3 bg-gray-50 border border-gray-200">
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <button
+                  onClick={() => setCurrentFolderId(null)}
+                  className="hover:text-black transition-colors"
+                >
+                  Documents
+                </button>
+                <span>/</span>
+                <span className="text-black font-medium">
+                  {folders.find(f => f.id === currentFolderId)?.name || 'Unknown Folder'}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {/* Folders Grid/List */}
+          {folders.filter(f => f.parentId === currentFolderId).length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Folders</h3>
+              <div className={viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-4 gap-4' : 'space-y-2'}>
+                {folders
+                  .filter(f => f.parentId === currentFolderId)
+                  .map(folder => (
+                    <motion.div
+                      key={folder.id}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className={`group relative p-3 border border-gray-200 hover:border-gray-300 transition-colors cursor-pointer ${
+                        viewMode === 'grid' ? 'text-center' : 'flex items-center justify-between'
+                      }`}
+                      onClick={() => setCurrentFolderId(folder.id)}
+                    >
+                      <div className={viewMode === 'grid' ? '' : 'flex items-center space-x-3'}>
+                        <FolderIcon className={`text-yellow-500 ${viewMode === 'grid' ? 'h-8 w-8 mx-auto mb-2' : 'h-5 w-5'}`} />
+                        <div>
+                          <p className="text-sm font-medium text-black">{folder.name}</p>
+                          <p className="text-xs text-gray-500">{folder.documents.length} files</p>
+                        </div>
+                      </div>
+                      {viewMode === 'list' && (
+                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              // Edit folder logic
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            <PencilIcon className="h-3 w-3 text-gray-500" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              deleteFolder(folder.id)
+                            }}
+                            className="p-1 hover:bg-red-100 rounded transition-colors"
+                          >
+                            <TrashIcon className="h-3 w-3 text-red-500" />
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))
+                }
+              </div>
+            </div>
+          )}
+          
+          {/* Documents Grid/List */}
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">
+              Documents ({documentsData?.documents?.length || 0})
+            </h3>
+          </div>
+          
+          {documentsData?.documents?.length > 0 ? (
+            <div className={viewMode === 'grid' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4' : 'space-y-2'}>
+              {documentsData.documents.map((doc: any) => (
+                <motion.div
+                  key={doc.id}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={`group relative border border-gray-200 hover:border-gray-300 transition-colors ${
+                    viewMode === 'grid' ? 'p-4 text-center' : 'p-3 flex items-center justify-between'
+                  }`}
+                >
+                  <div className={viewMode === 'grid' ? '' : 'flex items-center space-x-3 flex-1'}>
+                    <DocumentTextIcon className={`text-blue-500 ${viewMode === 'grid' ? 'h-8 w-8 mx-auto mb-2' : 'h-5 w-5'}`} />
+                    <div className={viewMode === 'grid' ? '' : 'flex-1'}>
+                      <p className="text-sm font-medium text-black truncate" title={doc.filename}>
+                        {doc.filename}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {doc.fileType} • {doc.size} • {doc.uploadedAt}
+                      </p>
+                      <div className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${
+                        doc.status === 'Processed' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {doc.status}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {viewMode === 'list' && (
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => {/* Preview document */}}
+                        className="p-1 hover:bg-gray-100 rounded transition-colors"
+                        title="Preview document"
+                      >
+                        <EyeIcon className="h-3 w-3 text-gray-500" />
+                      </button>
+                      <button
+                        onClick={() => {/* Move to folder */}}
+                        className="p-1 hover:bg-gray-100 rounded transition-colors"
+                        title="Move to folder"
+                      >
+                        <FolderIcon className="h-3 w-3 text-gray-500" />
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-gray-500">
+              <DocumentTextIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg font-medium mb-2">No documents uploaded yet</p>
+              <p className="text-sm">Upload documents using the drag & drop area above</p>
+            </div>
+          )}
+        </motion.div>
       </div>
     </div>
   )

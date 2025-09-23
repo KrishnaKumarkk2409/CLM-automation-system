@@ -1,9 +1,12 @@
 # Environment Variables
 .env
+.env.template
+.env.template.txt
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
 
 # Python
 __pycache__/
@@ -37,6 +40,7 @@ ENV/
 env.bak/
 venv.bak/
 /backend/venv/
+/backend/.env
 /env/
 .venv/
 pyvenv.cfg

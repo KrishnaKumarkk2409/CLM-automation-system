@@ -69,7 +69,7 @@ export default function WelcomeScreen({
   }
 
   return (
-    <div className="h-full overflow-auto bg-gradient-to-br from-primary-50 via-white to-accent-50">
+    <div className="h-full overflow-auto bg-white">
       <motion.div 
         className="max-w-6xl mx-auto px-4 lg:px-6 py-6 lg:py-12"
         variants={containerVariants}
@@ -79,25 +79,25 @@ export default function WelcomeScreen({
         {/* Hero Section */}
         <motion.div className="text-center mb-8 lg:mb-12" variants={itemVariants}>
           <motion.div 
-            className="inline-flex items-center justify-center w-16 h-16 lg:w-20 lg:h-20 bg-gradient-to-br from-primary-500 to-accent-500 rounded-full mb-4 lg:mb-6 shadow-lg"
+            className="inline-flex items-center justify-center w-16 h-16 lg:w-20 lg:h-20 bg-black border border-black mb-4 lg:mb-6"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
             <SparklesIcon className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
           </motion.div>
           
-          <h1 className="text-3xl lg:text-5xl font-bold text-secondary-900 mb-3 lg:mb-4">
+          <h1 className="text-3xl lg:text-5xl font-bold text-black mb-3 lg:mb-4">
             Welcome to{' '}
             <span className="gradient-text">CLM Automation</span>
           </h1>
           
-          <p className="text-base lg:text-xl text-secondary-600 mb-6 lg:mb-8 max-w-2xl mx-auto px-4">
+          <p className="text-base lg:text-xl text-gray-600 mb-6 lg:mb-8 max-w-2xl mx-auto px-4">
             Transform your contract management with AI-powered insights, automated analysis, and intelligent monitoring
           </p>
 
           <motion.button
             onClick={onStartChat}
-            className="btn-primary text-base lg:text-lg px-6 lg:px-8 py-3 lg:py-4 rounded-xl shadow-lg"
+            className="btn-primary text-base lg:text-lg px-6 lg:px-8 py-3 lg:py-4"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
@@ -120,13 +120,13 @@ export default function WelcomeScreen({
                 whileHover={{ scale: 1.02 }}
                 variants={itemVariants}
               >
-                <div className="w-12 h-12 bg-gradient-to-br from-primary-100 to-accent-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                  <IconComponent className="w-6 h-6 text-primary-600" />
+                <div className="w-12 h-12 bg-gray-100 border border-gray-200 flex items-center justify-center mx-auto mb-4">
+                  <IconComponent className="w-6 h-6 text-black" />
                 </div>
-                <h3 className="font-semibold text-secondary-900 mb-2">
+                <h3 className="font-semibold text-black mb-2">
                   {feature.title}
                 </h3>
-                <p className="text-sm text-secondary-600">
+                <p className="text-sm text-gray-600">
                   {feature.description}
                 </p>
               </motion.div>
@@ -136,7 +136,7 @@ export default function WelcomeScreen({
 
         {/* Sample Questions */}
         <motion.div variants={itemVariants}>
-          <h2 className="text-2xl font-semibold text-secondary-900 text-center mb-8">
+          <h2 className="text-2xl font-semibold text-black text-center mb-8">
             💭 Try asking me something like...
           </h2>
           
@@ -145,17 +145,17 @@ export default function WelcomeScreen({
               <motion.button
                 key={index}
                 onClick={() => onSampleQuestion(question)}
-                className="card-hover p-4 text-left hover:bg-gradient-to-r hover:from-primary-50 hover:to-accent-50 transition-all duration-300"
+                className="card-hover p-4 text-left hover:bg-gray-50 transition-all duration-300"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 variants={itemVariants}
               >
                 <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-primary-100 to-accent-100 rounded-lg flex items-center justify-center mt-1">
-                    <BoltIcon className="w-4 h-4 text-primary-600" />
+                  <div className="flex-shrink-0 w-8 h-8 bg-gray-100 border border-gray-200 flex items-center justify-center mt-1">
+                    <BoltIcon className="w-4 h-4 text-black" />
                   </div>
                   <div>
-                    <p className="text-secondary-800 font-medium">
+                    <p className="text-black font-medium">
                       {question}
                     </p>
                   </div>
@@ -170,22 +170,22 @@ export default function WelcomeScreen({
           className="mt-16 text-center"
           variants={itemVariants}
         >
-          <div className="bg-gradient-to-r from-primary-600 to-accent-600 rounded-2xl p-8 text-white shadow-xl">
+          <div className="bg-black border border-black p-8 text-white">
             <h3 className="text-2xl font-semibold mb-4">
               Ready to revolutionize your contract management?
             </h3>
-            <div className="grid grid-cols-3 divide-x divide-white/20 max-w-md mx-auto">
+            <div className="grid grid-cols-3 divide-x divide-white max-w-md mx-auto">
               <div className="px-4">
                 <div className="text-3xl font-bold">AI</div>
-                <div className="text-sm opacity-90">Powered</div>
+                <div className="text-sm">Powered</div>
               </div>
               <div className="px-4">
                 <div className="text-3xl font-bold">24/7</div>
-                <div className="text-sm opacity-90">Available</div>
+                <div className="text-sm">Available</div>
               </div>
               <div className="px-4">
                 <div className="text-3xl font-bold">∞</div>
-                <div className="text-sm opacity-90">Contracts</div>
+                <div className="text-sm">Contracts</div>
               </div>
             </div>
           </div>
@@ -196,8 +196,8 @@ export default function WelcomeScreen({
           className="mt-8 text-center"
           variants={itemVariants}
         >
-          <div className="inline-flex items-center space-x-2 text-sm text-secondary-600 bg-white/80 backdrop-blur-sm rounded-lg px-4 py-2 border border-secondary-200/50">
-            <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
+          <div className="inline-flex items-center space-x-2 text-sm text-gray-600 bg-white px-4 py-2 border border-gray-200">
+            <div className="w-2 h-2 bg-black rounded-full animate-pulse"></div>
             <span>System online and ready</span>
           </div>
         </motion.div>

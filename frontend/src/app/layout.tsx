@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
+import dynamic from 'next/dynamic'
 import { Toaster } from 'react-hot-toast'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -25,39 +26,42 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const AuthGate = dynamic(() => import('@/components/auth/AuthGate'), { ssr: false })
   return (
     <html lang="en" className="h-full">
       <head>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <link rel="icon" type="image/png" href="/favicon.png" />
-        <meta name="theme-color" content="#3b82f6" />
+        <meta name="theme-color" content="#000000" />
       </head>
       <body className={`${inter.className} h-full antialiased`}>
         <Providers>
-          <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50">
-            {children}
-          </div>
+          <AuthGate>
+            <div className="min-h-screen bg-white">
+              {children}
+            </div>
+          </AuthGate>
           <Toaster
             position="top-right"
             toastOptions={{
               duration: 4000,
               style: {
                 background: '#fff',
-                color: '#374151',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-                border: '1px solid rgba(226, 232, 240, 0.5)',
-                borderRadius: '12px',
+                color: '#000',
+                boxShadow: '0 2px 6px 0 rgba(0, 0, 0, 0.15)',
+                border: '1px solid #e0e0e0',
+                borderRadius: '4px',
                 padding: '16px',
               },
               success: {
                 iconTheme: {
-                  primary: '#10b981',
+                  primary: '#000',
                   secondary: '#fff',
                 },
               },
               error: {
                 iconTheme: {
-                  primary: '#ef4444',
+                  primary: '#000',
                   secondary: '#fff',
                 },
               },
