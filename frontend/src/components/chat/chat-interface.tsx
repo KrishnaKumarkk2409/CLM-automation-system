@@ -198,7 +198,7 @@ export default function ChatInterface() {
   // Build conversation list from history
   const conversations = useMemo(() => {
     const map: Record<string, { id: string; last: string; count: number; updatedAt: string }> = {}
-    ;(historyData?.messages || []).forEach(m => {
+    (historyData?.messages || []).forEach(m => {
       const item = map[m.conversation_id] || { id: m.conversation_id, last: '', count: 0, updatedAt: m.created_at }
       item.count += 1
       item.last = m.content
@@ -206,7 +206,7 @@ export default function ChatInterface() {
       map[m.conversation_id] = item
     })
     return Object.values(map).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  }, [historyData])
+  }, [historyData]);
 
   return (
     <div className="h-full bg-white">
