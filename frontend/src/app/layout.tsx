@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
+import dynamic from 'next/dynamic'
 import { Toaster } from 'react-hot-toast'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -25,6 +26,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const AuthGate = dynamic(() => import('@/components/auth/AuthGate'), { ssr: false })
   return (
     <html lang="en" className="h-full">
       <head>
@@ -34,9 +36,11 @@ export default function RootLayout({
       </head>
       <body className={`${inter.className} h-full antialiased`}>
         <Providers>
-          <div className="min-h-screen bg-white">
-            {children}
-          </div>
+          <AuthGate>
+            <div className="min-h-screen bg-white">
+              {children}
+            </div>
+          </AuthGate>
           <Toaster
             position="top-right"
             toastOptions={{

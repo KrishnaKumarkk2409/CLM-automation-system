@@ -3,7 +3,7 @@ FastAPI backend for CLM automation system.
 Modern web API replacing Streamlit interface.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -17,6 +17,7 @@ import io
 from datetime import datetime
 import tempfile
 import uuid
+import re
 
 # Add the parent directory to the path so we can import from src
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -68,6 +69,7 @@ class ChatResponse(BaseModel):
     conversation_id: str
     message_id: str
     timestamp: datetime
+    user_id: Optional[str] = None
 
 class SystemStats(BaseModel):
     total_documents: int
@@ -110,6 +112,9 @@ class SearchResult(BaseModel):
     score: float
     metadata: Dict[str, Any]
 
+class GlobalSearchResponse(BaseModel):
+    results: List[SearchResult]
+
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
@@ -144,6 +149,7 @@ class ConnectionManager:
                     self.conversation_sessions[conversation_id].remove(connection)
 
 manager = ConnectionManager()
+conversation_user_map: Dict[str, str] = {}
 
 @app.on_event("startup")
 async def startup_event():
@@ -262,16 +268,67 @@ async def get_system_stats():
             system_status="error"
         )
 
+def _get_user_id_from_request(request: Request) -> Optional[str]:
+    try:
+        if "db_manager" not in components:
+            return None
+        auth_header = request.headers.get("Authorization") or request.headers.get("authorization")
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            return None
+        token = auth_header.split(" ", 1)[1].strip()
+        if not token:
+            return None
+        # Validate token with Supabase (service key allows admin token introspection)
+        user_resp = components["db_manager"].client.auth.get_user(token)
+        user = getattr(user_resp, "user", None)
+        return getattr(user, "id", None) if user else None
+    except Exception as e:
+        logger.warning(f"JWT validation failed: {e}")
+        return None
+
+
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(chat_request: ChatMessage):
+async def chat_endpoint(chat_request: ChatMessage, request: Request):
     """Main chat endpoint for contract queries"""
     try:
         if "rag_pipeline" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
         
+        # Identify user from JWT (optional)
+        user_id = _get_user_id_from_request(request)
+
         # Generate unique IDs
         conversation_id = chat_request.conversation_id or str(uuid.uuid4())
         message_id = str(uuid.uuid4())
+        if user_id:
+            conversation_user_map[conversation_id] = user_id
+
+        # Persist session and incoming user message (best-effort)
+        try:
+            db = components["db_manager"]
+            if user_id:
+                # Ensure chat session exists
+                try:
+                    db.client.table('chat_sessions').upsert({
+                        'id': conversation_id,
+                        'user_id': user_id,
+                        'updated_at': datetime.now().isoformat()
+                    }).execute()
+                except Exception as e:
+                    logger.debug(f"chat_sessions upsert skipped: {e}")
+            # Insert user message
+            try:
+                db.client.table('chat_messages').insert({
+                    'conversation_id': conversation_id,
+                    'role': 'user',
+                    'content': chat_request.message,
+                    'created_at': datetime.now().isoformat(),
+                    'user_id': user_id
+                }).execute()
+            except Exception as e:
+                logger.debug(f"chat_messages insert (user) skipped: {e}")
+        except Exception as e:
+            logger.debug(f"Chat persistence setup skipped: {e}")
         
         # Enhanced AI agent with RAG pipeline as tool
         query_type = classify_query(chat_request.message)
@@ -319,17 +376,50 @@ async def chat_endpoint(chat_request: ChatMessage):
                 conversation_id
             )
         
+        # Persist assistant message
+        try:
+            db = components["db_manager"]
+            db.client.table('chat_messages').insert({
+                'conversation_id': conversation_id,
+                'role': 'assistant',
+                'content': response_data["answer"],
+                'created_at': datetime.now().isoformat(),
+                'user_id': user_id
+            }).execute()
+        except Exception as e:
+            logger.debug(f"chat_messages insert (assistant) skipped: {e}")
+
         return ChatResponse(
             response=response_data["answer"],
             sources=response_data.get("sources", []),
             conversation_id=conversation_id,
             message_id=message_id,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            user_id=user_id
         )
         
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat-history")
+async def chat_history(conversation_id: Optional[str] = None, request: Request = None):
+    try:
+        if "db_manager" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+        user_id = _get_user_id_from_request(request) if request else None
+        db = components["db_manager"]
+        query = db.client.table('chat_messages').select('conversation_id, role, content, created_at')
+        if conversation_id:
+            query = query.eq('conversation_id', conversation_id)
+        elif user_id:
+            # Return latest messages for this user across sessions
+            query = query.eq('user_id', user_id)
+        result = query.order('created_at', desc=False).limit(200).execute()
+        return {"messages": result.data}
+    except Exception as e:
+        logger.error(f"Chat history error: {e}")
+        return {"messages": []}
 
 @app.websocket("/ws/{conversation_id}")
 async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
@@ -427,6 +517,103 @@ async def search_documents(search_request: DocumentSearchRequest):
         
     except Exception as e:
         logger.error(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/global-search", response_model=GlobalSearchResponse)
+async def global_search(search_request: GlobalSearchRequest):
+    """Global search across documents, contracts, and chunks."""
+    try:
+        if "db_manager" not in components or "embedding_manager" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        db = components["db_manager"]
+        embeddings = components["embedding_manager"]
+
+        query = search_request.query.strip()
+        if not query:
+            return GlobalSearchResponse(results=[])
+
+        results: List[SearchResult] = []
+
+        # 1) Semantic search over chunks using vector similarity
+        if "chunks" in search_request.search_types:
+            try:
+                query_emb = embeddings.get_embedding(query)
+                similar = db.similarity_search(query_emb, limit=search_request.limit)
+                for item in similar:
+                    # item fields expected from RPC: id, document_id, similarity, content/metadata
+                    preview_text = item.get('chunk_text') or item.get('content') or ''
+                    title = item.get('documents', {}).get('filename') if isinstance(item.get('documents'), dict) else item.get('document_name') or 'Document Chunk'
+                    results.append(SearchResult(
+                        id=str(item.get('id') or item.get('chunk_id') or item.get('document_id') or uuid.uuid4()),
+                        title=str(title),
+                        type='chunk',
+                        content_preview=(preview_text[:200] + '...') if isinstance(preview_text, str) and len(preview_text) > 200 else str(preview_text),
+                        score=float(item.get('similarity', 0.0)),
+                        metadata={k: v for k, v in item.items() if k not in ['embedding', 'chunk_text']}
+                    ))
+            except Exception as e:
+                logger.error(f"Chunk semantic search failed: {e}")
+
+        # 2) Full-text search on documents table
+        if "documents" in search_request.search_types:
+            try:
+                doc_resp = db.client.table('documents') \
+                    .select('id, filename, file_type, content, metadata') \
+                    .ilike('filename', f"%{query}%") \
+                    .limit(search_request.limit) \
+                    .execute()
+                for doc in doc_resp.data:
+                    content_preview = doc.get('content', '')
+                    results.append(SearchResult(
+                        id=str(doc['id']),
+                        title=str(doc.get('filename', 'Document')),
+                        type='document',
+                        content_preview=(content_preview[:200] + '...') if isinstance(content_preview, str) and len(content_preview) > 200 else str(content_preview),
+                        score=0.5,
+                        metadata={
+                            'file_type': doc.get('file_type'),
+                            'source': (doc.get('metadata') or {}).get('source') if isinstance(doc.get('metadata'), dict) else None
+                        }
+                    ))
+            except Exception as e:
+                logger.error(f"Document search failed: {e}")
+
+        # 3) Search contracts by name and parties
+        if "contracts" in search_request.search_types:
+            try:
+                contracts_resp = db.client.table('contracts') \
+                    .select('id, contract_name, parties, department, status, documents!inner(filename)') \
+                    .or_(f"contract_name.ilike.%{query}%,department.ilike.%{query}%") \
+                    .limit(search_request.limit) \
+                    .execute()
+                for c in contracts_resp.data:
+                    parties_str = ', '.join(c.get('parties', []) or [])
+                    title = c.get('contract_name') or c.get('documents', {}).get('filename') or 'Contract'
+                    preview = f"Parties: {parties_str} | Dept: {c.get('department', 'Unknown')} | Status: {c.get('status', 'active')}"
+                    results.append(SearchResult(
+                        id=str(c['id']),
+                        title=str(title),
+                        type='contract',
+                        content_preview=preview,
+                        score=0.6,
+                        metadata={k: v for k, v in c.items() if k != 'id'}
+                    ))
+            except Exception as e:
+                logger.error(f"Contracts search failed: {e}")
+
+        # Deduplicate by id+type keeping highest score
+        dedup: Dict[str, SearchResult] = {}
+        for r in results:
+            key = f"{r.type}:{r.id}"
+            if key not in dedup or r.score > dedup[key].score:
+                dedup[key] = r
+
+        # Sort by score desc
+        sorted_results = sorted(dedup.values(), key=lambda x: x.score, reverse=True)[: search_request.limit]
+        return GlobalSearchResponse(results=sorted_results)
+    except Exception as e:
+        logger.error(f"Global search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate-report")
@@ -878,7 +1065,7 @@ async def get_analytics():
         # Get contracts with dates for timeline
         try:
             contracts_result = db.client.table('contracts')\
-                .select('contract_name, end_date, department')\
+                .select('contract_name, end_date, department, key_clauses')\
                 .eq('status', 'active')\
                 .execute()
         except Exception as e:
@@ -918,8 +1105,37 @@ async def get_analytics():
                 dept_counts = contracts_df['department'].value_counts().to_dict()
                 analytics_data["department_distribution"] = dept_counts
             
-            # Set total value to 0 since contract_value column doesn't exist
-            analytics_data["total_value"] = 0
+            # Compute total value by parsing currency amounts from key_clauses
+            total_value = 0
+            amount_pattern = re.compile(r"\$\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)")
+            for row in contracts_result.data:
+                key_clauses = row.get('key_clauses')
+                if isinstance(key_clauses, list):
+                    for clause in key_clauses:
+                        try:
+                            text = clause if isinstance(clause, str) else json.dumps(clause)
+                            for match in amount_pattern.findall(text):
+                                # Remove commas and convert to float
+                                clean = match.replace(',', '')
+                                try:
+                                    total_value += float(clean)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+                elif isinstance(key_clauses, dict):
+                    try:
+                        text = json.dumps(key_clauses)
+                        for match in amount_pattern.findall(text):
+                            clean = match.replace(',', '')
+                            try:
+                                total_value += float(clean)
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+
+            analytics_data["total_value"] = round(total_value, 2)
         
         return analytics_data
         

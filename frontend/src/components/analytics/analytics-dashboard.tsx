@@ -224,9 +224,9 @@ export default function AnalyticsDashboard() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
             <div className="p-4 bg-gray-100 border border-gray-200">
-              <div className="text-2xl mb-2">✅</div>
-              <p className="text-sm font-medium text-black">System Operational</p>
-              <p className="text-xs text-gray-600">All services running</p>
+              <div className="text-2xl mb-2">💰</div>
+              <p className="text-sm font-medium text-black">Total Value</p>
+              <p className="text-lg text-gray-800">${data.total_value.toLocaleString()}</p>
             </div>
             <div className="p-4 bg-gray-100 border border-gray-200">
               <div className="text-2xl mb-2">🤖</div>

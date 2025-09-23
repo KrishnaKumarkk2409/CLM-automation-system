@@ -38,6 +38,7 @@ export default function HomePage() {
   const [currentView, setCurrentView] = useState<View>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [hasStartedChat, setHasStartedChat] = useState(false)
+  const [showSearchModal, setShowSearchModal] = useState(false)
   const { data: stats, isLoading: statsLoading } = useSystemStats()
 
   // Sample questions for welcome screen
@@ -159,6 +160,14 @@ export default function HomePage() {
                   )
                 })}
               </div>
+
+              {/* Global Search Button */}
+              <button
+                onClick={() => setShowSearchModal(true)}
+                className="px-3 py-2 bg-black text-white text-sm border border-black hover:opacity-90"
+              >
+                Global Search
+              </button>
             </div>
           </div>
         </header>
@@ -187,6 +196,24 @@ export default function HomePage() {
           className="fixed inset-0 bg-black bg-opacity-20 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
+      )}
+
+      {/* Global Search Modal with iframe */}
+      {showSearchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowSearchModal(false)} />
+          <div className="relative bg-white w-[95%] h-[90%] max-w-6xl shadow-xl border">
+            <div className="flex items-center justify-between p-3 border-b">
+              <h3 className="font-medium">Global Search</h3>
+              <button onClick={() => setShowSearchModal(false)} className="text-sm px-2 py-1 border">Close</button>
+            </div>
+            <iframe
+              src="/search"
+              title="Global Search"
+              className="w-full h-[calc(100%-48px)]"
+            />
+          </div>
+        </div>
       )}
     </div>
   )

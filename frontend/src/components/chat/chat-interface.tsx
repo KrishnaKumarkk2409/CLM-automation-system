@@ -1,6 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeKatex from 'rehype-katex'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   PaperAirplaneIcon,
@@ -11,9 +14,11 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   XMarkIcon,
-  EyeIcon
+  EyeIcon,
+  PaperClipIcon,
+  Bars3BottomLeftIcon
 } from '@heroicons/react/24/outline'
-import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments } from '@/hooks/use-api'
+import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments, useChatHistory } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
 import { useDropzone } from 'react-dropzone'
 import DocumentPreview from '../document/document-preview'
@@ -21,7 +26,7 @@ import DocumentPreview from '../document/document-preview'
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
-  const [conversationId] = useState(() => {
+  const [conversationId, setConversationId] = useState(() => {
     // Browser-compatible UUID generator
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
       const r = Math.random() * 16 | 0
@@ -29,16 +34,19 @@ export default function ChatInterface() {
       return v.toString(16)
     })
   })
+  const [historyOpen, setHistoryOpen] = useState(true)
   const [showUpload, setShowUpload] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [previewDocument, setPreviewDocument] = useState<{id: string, filename: string} | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const sendMessage = useSendMessage()
   const uploadDocs = useUploadDocuments()
   const searchDocs = useSearchDocuments()
+  const { data: historyData } = useChatHistory()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -47,6 +55,22 @@ export default function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Load messages for selected conversation from history
+  useEffect(() => {
+    if (!historyData?.messages) return
+    if (!conversationId) return
+    const convMessages = historyData.messages
+      .filter(m => m.conversation_id === conversationId)
+      .map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.created_at)
+      })) as ChatMessage[]
+    if (convMessages.length) {
+      setMessages(convMessages)
+    }
+  }, [historyData, conversationId])
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || sendMessage.isPending) return
@@ -125,6 +149,38 @@ export default function ChatInterface() {
     multiple: true
   })
 
+  const handleAttachClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    const docTypes = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+    const hasProcessable = files.some(f => docTypes.includes(f.type))
+    if (hasProcessable) {
+      const confirmProcess = window.confirm('Do you also want to process these file(s) into the database for future use?')
+      try {
+        await uploadDocs.mutateAsync(files)
+        toast.success('Files uploaded successfully')
+        if (confirmProcess) {
+          toast.success('Processing has been requested and will be reflected shortly.')
+        }
+      } catch (e) {
+        toast.error('Upload failed')
+      }
+    } else {
+      try {
+        await uploadDocs.mutateAsync(files)
+        toast.success('Attachment uploaded')
+      } catch {
+        toast.error('Attachment upload failed')
+      }
+    }
+    // reset
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   // Search handling
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
@@ -139,12 +195,59 @@ export default function ChatInterface() {
     }
   }
 
+  // Build conversation list from history
+  const conversations = useMemo(() => {
+    const map: Record<string, { id: string; last: string; count: number; updatedAt: string }> = {}
+    ;(historyData?.messages || []).forEach(m => {
+      const item = map[m.conversation_id] || { id: m.conversation_id, last: '', count: 0, updatedAt: m.created_at }
+      item.count += 1
+      item.last = m.content
+      item.updatedAt = m.created_at
+      map[m.conversation_id] = item
+    })
+    return Object.values(map).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  }, [historyData])
+
   return (
     <div className="h-full bg-white">
-      {/* No sidebar - clean chat interface */}
+      <div className="flex h-full">
+        {/* History Sidebar */}
+        <div className={`border-r border-gray-200 bg-gray-50 ${historyOpen ? 'w-64' : 'w-0'} overflow-hidden transition-all duration-200 hidden md:block`}>
+          <div className="p-3 border-b flex items-center justify-between">
+            <div className="font-medium text-sm text-black">Chat History</div>
+            <button className="text-xs border px-2 py-1" onClick={() => {
+              // Start new chat
+              const id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0
+                const v = c == 'x' ? r : (r & 0x3 | 0x8)
+                return v.toString(16)
+              })
+              setConversationId(id)
+              setMessages([])
+            }}>New</button>
+          </div>
+          <div className="overflow-auto h-[calc(100%-48px)]">
+            {conversations.map(conv => (
+              <button key={conv.id} onClick={() => setConversationId(conv.id)} className={`w-full text-left p-3 border-b hover:bg-white ${conversationId === conv.id ? 'bg-white' : ''}`}>
+                <div className="text-xs text-gray-500 truncate">{conv.id}</div>
+                <div className="text-sm text-black truncate mt-1">{conv.last}</div>
+                <div className="text-xs text-gray-400 mt-1">{new Date(conv.updatedAt).toLocaleString()}</div>
+              </button>
+            ))}
+            {conversations.length === 0 && (
+              <div className="p-4 text-xs text-gray-500">No messages yet</div>
+            )}
+          </div>
+        </div>
       
-      {/* Main Chat Area - Full Width */}
-      <div className="flex flex-col h-full">
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col h-full">
+        <div className="border-b p-2 flex items-center justify-between md:hidden">
+          <button onClick={() => setHistoryOpen(!historyOpen)} className="border px-2 py-1 text-sm flex items-center space-x-1">
+            <Bars3BottomLeftIcon className="h-4 w-4" />
+            <span>History</span>
+          </button>
+        </div>
         
         {/* Chat Messages */}
         <div className="flex-1 overflow-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
@@ -168,12 +271,14 @@ export default function ChatInterface() {
               <div
                 className={`max-w-xs lg:max-w-2xl xl:max-w-3xl ${
                   message.role === 'user'
-                    ? 'chat-bubble-user text-sm lg:text-base'
+                    ? 'chat-bubble-user text-sm lg:text-base text-white'
                     : 'chat-bubble-assistant text-sm lg:text-base'
                 }`}
               >
                 <div className="prose prose-sm max-w-none">
-                  {formatMessage(message.content)}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeKatex]}>
+                    {message.content}
+                  </ReactMarkdown>
                 </div>
 
                 {message.sources && message.sources.length > 0 && (
@@ -257,6 +362,14 @@ export default function ChatInterface() {
         <div className="border-t border-gray-200 bg-white p-3 lg:p-4">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-end space-x-2 lg:space-x-3">
+              <button
+                onClick={handleAttachClick}
+                className="p-3 lg:p-4 border border-gray-300 hover:bg-gray-50"
+                title="Attach files"
+              >
+                <PaperClipIcon className="w-4 h-4 lg:w-5 lg:h-5" />
+                <input ref={fileInputRef} type="file" onChange={handleFilesSelected} className="hidden" multiple accept="image/*,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              </button>
               <div className="flex-1">
                 <textarea
                   ref={inputRef}

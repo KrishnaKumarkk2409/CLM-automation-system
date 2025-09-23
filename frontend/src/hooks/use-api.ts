@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
 import axios from 'axios'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -15,6 +16,8 @@ const api = axios.create({
 // Request interceptor for debugging
 api.interceptors.request.use((config) => {
   console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`)
+  // Attach Supabase JWT if available
+  const accessToken = (supabase as any)?.auth?.getSession ? undefined : undefined
   return config
 })
 
@@ -49,6 +52,7 @@ export interface ChatResponse {
   conversation_id: string
   message_id: string
   timestamp: string
+  user_id?: string
 }
 
 export interface DocumentSearchResult {
@@ -90,10 +94,13 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async ({ message, conversationId }: { message: string; conversationId?: string }): Promise<ChatResponse> => {
+      // Ensure auth header is present for this call
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
       const response = await api.post('/chat', {
         message,
         conversation_id: conversationId,
-      })
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
       return response.data
     },
     onSuccess: () => {
@@ -133,6 +140,34 @@ export function useSearchDocuments() {
   return useMutation({
     mutationFn: async ({ query, limit = 10 }: { query: string; limit?: number }): Promise<DocumentSearchResult> => {
       const response = await api.post('/search', { query, limit })
+      return response.data
+    },
+  })
+}
+
+export interface GlobalSearchParams {
+  query: string
+  limit?: number
+  search_types?: string[]
+}
+
+export interface GlobalSearchItem {
+  id: string
+  title: string
+  type: 'document' | 'contract' | 'chunk'
+  content_preview: string
+  score: number
+  metadata: Record<string, any>
+}
+
+export interface GlobalSearchResponse {
+  results: GlobalSearchItem[]
+}
+
+export function useGlobalSearch() {
+  return useMutation({
+    mutationFn: async ({ query, limit = 20, search_types = ['documents', 'contracts', 'chunks'] }: GlobalSearchParams): Promise<GlobalSearchResponse> => {
+      const response = await api.post('/global-search', { query, limit, search_types })
       return response.data
     },
   })
@@ -255,4 +290,22 @@ export function useWebSocket(conversationId: string) {
       console.log('WebSocket disconnect')
     },
   }
+}
+
+// Chat history
+export function useChatHistory(conversationId?: string) {
+  return useQuery({
+    queryKey: ['chat-history', conversationId || 'all'],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      const response = await api.get('/chat-history', {
+        params: conversationId ? { conversation_id: conversationId } : undefined,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      })
+      return response.data as { messages: { conversation_id: string; role: 'user' | 'assistant'; content: string; created_at: string }[] }
+    },
+    staleTime: 30 * 1000,
+    enabled: true,
+  })
 }
