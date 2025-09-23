@@ -1,0 +1,38 @@
+
+CONTRACT SUMMARY REPORT
+Generated: September 22, 2025
+
+Active Contracts Summary:
+========================
+
+1. TechCorp Software License Agreement
+   - Parties: TechCorp Solutions Inc., GlobalTech Enterprises  
+   - Term: 2024-01-15 to 2025-01-14
+   - Value: $120,000
+   - Department: IT
+   - Status: Active
+   - Contact: contracts@techcorp.com, +1-555-0123
+
+2. DataSystems Service Level Agreement
+   - Parties: DataSystems LLC, CloudVentures Corp
+   - Term: 2024-03-01 to 2025-02-28
+   - Value: $85,000
+   - Department: Operations
+   - Status: Active
+   - Contact: admin@datasystems.com, +1-555-0125
+
+3. InnovateLabs Non-Disclosure Agreement
+   - Parties: InnovateLabs Inc., TechCorp Solutions Inc.
+   - Term: 2024-06-01 to 2026-05-31
+   - Value: N/A
+   - Department: Legal
+   - Status: Active
+   - Contact: contracts@innovatelabs.com, +1-555-0127
+
+EXPIRING SOON:
+- CloudVentures Service Contract expires 2024-10-14 (URGENT)
+
+CONFLICTS DETECTED:
+- TechCorp address mismatch between contracts
+- Different contact info for CloudVentures in NDA vs SLA
+        

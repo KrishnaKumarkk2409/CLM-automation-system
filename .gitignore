@@ -1,6 +1,7 @@
 # Environment Variables
 .env
 .env.template
+.env.template.txt
 .env.local
 .env.development.local
 .env.test.local
