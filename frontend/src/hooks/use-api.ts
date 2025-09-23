@@ -121,8 +121,10 @@ export function useUploadDocuments() {
       return response.data
     },
     onSuccess: () => {
-      // Invalidate system stats to reflect new documents
+      // Invalidate system stats and document lists to reflect new documents
       queryClient.invalidateQueries({ queryKey: ['system-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['frontend-documents-list'] })
+      queryClient.invalidateQueries({ queryKey: ['documents-list'] })
     },
   })
 }
@@ -158,6 +160,84 @@ export function useAnalytics() {
       return response.data
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
+// Documents and Contracts hooks
+export function useDocumentsList() {
+  return useQuery({
+    queryKey: ['documents-list'],
+    queryFn: async () => {
+      const response = await api.get('/documents')
+      return response.data
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  })
+}
+
+export function useContractsList() {
+  return useQuery({
+    queryKey: ['contracts-list'],
+    queryFn: async () => {
+      const response = await api.get('/contracts')
+      return response.data
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  })
+}
+
+export function useFrontendDocumentsList() {
+  return useQuery({
+    queryKey: ['frontend-documents-list'],
+    queryFn: async () => {
+      const response = await api.get('/frontend-documents')
+      return response.data
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  })
+}
+
+// API Key Management hooks
+export function useAPIKeys() {
+  return useQuery({
+    queryKey: ['api-keys'],
+    queryFn: async () => {
+      const response = await api.get('/api-keys')
+      return response.data
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
+export function useCreateAPIKey() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (keyData: {
+      name: string
+      description?: string
+      expires_at?: string
+    }) => {
+      const response = await api.post('/api-keys', keyData)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
+    },
+  })
+}
+
+export function useDeleteAPIKey() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (keyId: string) => {
+      const response = await api.delete(`/api-keys/${keyId}`)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] })
+    },
   })
 }
 

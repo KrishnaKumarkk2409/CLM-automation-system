@@ -46,29 +46,11 @@ export default function StatsCards({ stats }: StatsCardsProps) {
   ]
 
   const getColorClasses = (color: string) => {
-    const colorMap = {
-      primary: {
-        bg: 'from-primary-500 to-primary-600',
-        text: 'text-primary-600',
-        light: 'bg-primary-50'
-      },
-      success: {
-        bg: 'from-success-500 to-success-600',
-        text: 'text-success-600',
-        light: 'bg-success-50'
-      },
-      accent: {
-        bg: 'from-accent-500 to-accent-600',
-        text: 'text-accent-600',
-        light: 'bg-accent-50'
-      },
-      warning: {
-        bg: 'from-warning-500 to-warning-600',
-        text: 'text-warning-600',
-        light: 'bg-warning-50'
-      }
+    return {
+      bg: 'bg-black',
+      text: 'text-black',
+      light: 'bg-gray-100 border border-gray-200'
     }
-    return colorMap[color as keyof typeof colorMap] || colorMap.primary
   }
 
   return (
@@ -93,16 +75,16 @@ export default function StatsCards({ stats }: StatsCardsProps) {
                       <IconComponent className={`h-4 w-4 lg:h-5 lg:w-5 ${colors.text}`} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-lg lg:text-2xl font-semibold text-secondary-900 truncate">
+                      <p className="text-lg lg:text-2xl font-semibold text-black truncate">
                         {typeof stat.value === 'string' ? 
                           stat.value.charAt(0).toUpperCase() + stat.value.slice(1) : 
                           stat.value
                         }
                       </p>
-                      <p className="text-xs lg:text-sm font-medium text-secondary-600 truncate">
+                      <p className="text-xs lg:text-sm font-medium text-gray-600 truncate">
                         {stat.label}
                       </p>
-                      <p className="text-xs text-secondary-500 hidden lg:block">
+                      <p className="text-xs text-gray-500 hidden lg:block">
                         {stat.description}
                       </p>
                     </div>
@@ -113,11 +95,11 @@ export default function StatsCards({ stats }: StatsCardsProps) {
                 {stat.label !== 'System Status' && (
                   <div className="flex items-center space-x-1">
                     <motion.div
-                      className="w-2 h-2 bg-success-500 rounded-full"
+                      className="w-2 h-2 bg-black rounded-full"
                       animate={{ scale: [1, 1.2, 1] }}
                       transition={{ duration: 2, repeat: Infinity }}
                     />
-                    <span className="text-xs text-success-600 font-medium">
+                    <span className="text-xs text-black font-medium">
                       Active
                     </span>
                   </div>

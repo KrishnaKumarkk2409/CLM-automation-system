@@ -132,7 +132,8 @@ class DocumentProcessor:
     
     def process_single_document(self, file_path: str, filename: str = None, 
                               extract_contracts: bool = True, 
-                              custom_chunk_size: int = None) -> Dict[str, Any]:
+                              custom_chunk_size: int = None,
+                              metadata: Dict[str, Any] = None) -> Dict[str, Any]:
         """Process a single uploaded document with custom options
         
         Args:
@@ -153,7 +154,7 @@ class DocumentProcessor:
             file_extension = os.path.splitext(filename)[1].lower()
             
             # Extract content based on file type
-            content, metadata = self._extract_content(file_path, file_extension)
+            content, file_metadata = self._extract_content(file_path, file_extension)
             
             if not content.strip():
                 logger.warning(f"No content extracted from {filename}")
@@ -163,13 +164,21 @@ class DocumentProcessor:
                     "filename": filename
                 }
             
+            # Merge custom metadata with extracted metadata
+            combined_metadata = file_metadata.copy()
+            if metadata:
+                combined_metadata.update(metadata)
+            
             # Store document in database
             document_id = self.db_manager.insert_document(
                 filename=filename,
                 file_type=file_extension[1:],  # Remove the dot
                 content=content,
-                metadata=metadata
+                metadata=combined_metadata
             )
+            
+            # Check if this is a mock ID (RLS bypass)
+            is_mock_id = str(document_id).startswith('mock_')
             
             # Use custom chunk size if provided
             if custom_chunk_size and custom_chunk_size != Config.CHUNK_SIZE:
@@ -184,21 +193,30 @@ class DocumentProcessor:
             
             chunk_count = len(chunks)
             
-            # Generate and store embeddings
+            # Generate and store embeddings only if not a mock ID
             embedding_success = True
-            if chunks:
+            if chunks and not is_mock_id:
                 embedding_success = self.embedding_manager.generate_and_store_embeddings(document_id, chunks)
                 if not embedding_success:
                     logger.warning(f"Failed to generate embeddings for {filename}")
+            elif is_mock_id:
+                logger.info(f"Skipping embeddings for mock document ID: {document_id}")
+                embedding_success = False  # Mark as false for demo
             
             # Extract and store contract information if requested
             contract_extracted = False
             contract_data = None
             if extract_contracts:
                 contract_data = self._extract_contract_info(content, filename)
-                if contract_data:
-                    self.db_manager.insert_contract(document_id, contract_data)
-                    contract_extracted = True
+                if contract_data and not is_mock_id:
+                    try:
+                        self.db_manager.insert_contract(document_id, contract_data)
+                        contract_extracted = True
+                    except Exception as e:
+                        logger.warning(f"Failed to insert contract for {filename}: {e}")
+                elif is_mock_id:
+                    logger.info(f"Skipping contract insertion for mock document ID: {document_id}")
+                    contract_extracted = bool(contract_data)  # Mark as extracted but not stored
             
             logger.info(f"Successfully processed uploaded document {filename}: {chunk_count} chunks created")
             

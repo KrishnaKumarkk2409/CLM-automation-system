@@ -24,13 +24,18 @@ import StatsCards from '@/components/dashboard/stats-cards'
 import WelcomeScreen from '@/components/welcome/welcome-screen'
 import AnalyticsDashboard from '@/components/analytics/analytics-dashboard'
 import DocumentUpload from '@/components/upload/document-upload'
+import Dashboard from '@/components/dashboard/dashboard'
+import DocumentsList from '@/components/documents/documents-list'
+import ContractsList from '@/components/contracts/contracts-list'
+import ChunksList from '@/components/chunks/chunks-list'
+import Settings from '@/components/settings/settings'
 import { useSystemStats } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
 
-type View = 'chat' | 'analytics' | 'upload' | 'settings'
+type View = 'dashboard' | 'chat' | 'analytics' | 'upload' | 'settings' | 'documents' | 'contracts' | 'chunks'
 
 export default function HomePage() {
-  const [currentView, setCurrentView] = useState<View>('chat')
+  const [currentView, setCurrentView] = useState<View>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [hasStartedChat, setHasStartedChat] = useState(false)
   const { data: stats, isLoading: statsLoading } = useSystemStats()
@@ -60,68 +65,80 @@ export default function HomePage() {
   }
 
   const renderCurrentView = () => {
-    if (currentView === 'chat' && !hasStartedChat) {
-      return (
-        <WelcomeScreen 
-          onStartChat={handleStartChat}
-          onSampleQuestion={handleSampleQuestion}
-          sampleQuestions={sampleQuestions}
-        />
-      )
-    }
-
     switch (currentView) {
+      case 'dashboard':
+        return stats ? <Dashboard stats={stats} onNavigate={setCurrentView} /> : <div className="p-8 text-center">Loading...</div>
       case 'chat':
+        if (!hasStartedChat) {
+          return (
+            <WelcomeScreen 
+              onStartChat={handleStartChat}
+              onSampleQuestion={handleSampleQuestion}
+              sampleQuestions={sampleQuestions}
+            />
+          )
+        }
         return <ChatInterface />
+      case 'documents':
+        return <DocumentsList />
+      case 'contracts':
+        return <ContractsList />
+      case 'chunks':
+        return <ChunksList />
       case 'analytics':
         return <AnalyticsDashboard />
       case 'upload':
         return <DocumentUpload />
       case 'settings':
-        return <div className="p-8"><div className="text-center">Settings coming soon...</div></div>
+        return <Settings stats={stats} />
       default:
-        return <ChatInterface />
+        return stats ? <Dashboard stats={stats} onNavigate={setCurrentView} /> : <div className="p-8 text-center">Loading...</div>
     }
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50">
+    <div className="flex h-screen bg-white">
 
       {/* Main Content Area - Full Width */}
       <div className="w-full flex flex-col min-w-0">
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-sm border-b border-secondary-200/50 px-4 lg:px-6 py-3 lg:py-4">
+        <header className="bg-white border-b border-gray-200 px-4 lg:px-6 py-3 lg:py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 lg:space-x-4">
               
-              <div className="flex items-center space-x-2 lg:space-x-3">
-                <div className="p-1.5 lg:p-2 bg-gradient-to-br from-primary-500 to-accent-500 rounded-lg shadow-sm">
+            <button 
+              onClick={() => setCurrentView('dashboard')}
+              className="flex items-center space-x-2 lg:space-x-3 hover:opacity-80 transition-opacity"
+            >
+                <div className="p-1.5 lg:p-2 bg-black border border-black">
                   <ChatBubbleLeftRightIcon className="h-5 w-5 lg:h-6 lg:w-6 text-white" />
                 </div>
                 <div className="hidden sm:block">
-                  <h1 className="text-lg lg:text-xl font-semibold text-secondary-900">
+                  <h1 className="text-lg lg:text-xl font-semibold text-black">
                     CLM Automation
                   </h1>
-                  <p className="text-xs lg:text-sm text-secondary-500">
+                  <p className="text-xs lg:text-sm text-gray-600">
                     AI-powered contract management
                   </p>
                 </div>
-              </div>
+              </button>
             </div>
 
             <div className="flex items-center space-x-2 lg:space-x-4">
               {/* System Status - Hidden on mobile */}
               <div className="hidden md:flex items-center space-x-2 text-xs lg:text-sm">
-                <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                <span className="text-secondary-600">Online</span>
+                <div className="w-2 h-2 bg-black rounded-full animate-pulse"></div>
+                <span className="text-gray-600">Online</span>
               </div>
 
               {/* View Toggle Buttons - Responsive */}
-              <div className="flex items-center bg-secondary-100 p-1 rounded-lg">
+              <div className="flex items-center bg-gray-100 p-1 border border-gray-200">
                 {[
+                  { id: 'dashboard', icon: SparklesIcon, label: 'Dashboard' },
                   { id: 'chat', icon: ChatBubbleLeftRightIcon, label: 'Chat' },
                   { id: 'analytics', icon: ChartBarIcon, label: 'Analytics' },
                   { id: 'upload', icon: DocumentArrowUpIcon, label: 'Upload' },
+                  { id: 'settings', icon: CogIcon, label: 'Settings' },
                 ].map((view) => {
                   const IconComponent = view.icon
                   return (
@@ -130,10 +147,10 @@ export default function HomePage() {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => setCurrentView(view.id as View)}
-                      className={`p-1.5 lg:p-2 rounded-md transition-colors ${
+                      className={`p-1.5 lg:p-2 border transition-colors ${
                         currentView === view.id
-                          ? 'bg-white shadow-sm text-primary-600'
-                          : 'text-secondary-600 hover:text-secondary-900'
+                          ? 'bg-black text-white border-black'
+                          : 'bg-white text-black border-gray-300 hover:border-gray-400 hover:bg-gray-50'
                       }`}
                       title={view.label}
                     >
@@ -146,12 +163,6 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* Stats Cards - Responsive */}
-        {!statsLoading && stats && (
-          <div className="px-4 lg:px-6 py-3 lg:py-4 bg-white/50 border-b border-secondary-200/50">
-            <StatsCards stats={stats} />
-          </div>
-        )}
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden">
@@ -173,7 +184,7 @@ export default function HomePage() {
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black bg-opacity-20 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}

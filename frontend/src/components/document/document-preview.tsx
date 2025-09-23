@@ -57,10 +57,10 @@ export default function DocumentPreview({ documentId, filename, isOpen, onClose 
       
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
+      const link = window.document.createElement('a')
       link.href = url
       link.setAttribute('download', filename)
-      document.body.appendChild(link)
+      window.document.body.appendChild(link)
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
@@ -87,12 +87,12 @@ export default function DocumentPreview({ documentId, filename, isOpen, onClose 
   const getFileIcon = (fileType: string) => {
     switch (fileType?.toLowerCase()) {
       case 'pdf':
-        return <DocumentIcon className="h-6 w-6 text-red-500" />
+        return <DocumentIcon className="h-6 w-6 text-black" />
       case 'docx':
       case 'doc':
-        return <DocumentTextIcon className="h-6 w-6 text-blue-500" />
+        return <DocumentTextIcon className="h-6 w-6 text-black" />
       default:
-        return <DocumentTextIcon className="h-6 w-6 text-gray-500" />
+        return <DocumentTextIcon className="h-6 w-6 text-black" />
     }
   }
 
@@ -105,7 +105,7 @@ export default function DocumentPreview({ documentId, filename, isOpen, onClose 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+            className="fixed inset-0 bg-black bg-opacity-50 z-50"
             onClick={onClose}
           />
           
@@ -121,11 +121,11 @@ export default function DocumentPreview({ documentId, filename, isOpen, onClose 
               <div className="flex items-center space-x-3">
                 {document && getFileIcon(document.file_type)}
                 <div>
-                  <h2 className="text-lg lg:text-xl font-semibold text-gray-900 truncate max-w-md">
+                  <h2 className="text-lg lg:text-xl font-semibold text-black truncate max-w-md">
                     {filename}
                   </h2>
                   {document && (
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-600">
                       {document.file_type?.toUpperCase()} • {new Date(document.created_at).toLocaleDateString()}
                     </p>
                   )}
@@ -162,7 +162,7 @@ export default function DocumentPreview({ documentId, filename, isOpen, onClose 
               {isLoading && (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto mb-4"></div>
                     <p className="text-gray-600">Loading document...</p>
                   </div>
                 </div>
