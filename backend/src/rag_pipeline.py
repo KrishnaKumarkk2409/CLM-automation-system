@@ -12,9 +12,6 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
 from collections import deque
-from dotenv import load_dotenv
-
-load_dotenv(override=True)
 
 from src.config import Config
 from src.database import DatabaseManager

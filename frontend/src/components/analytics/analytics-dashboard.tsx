@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { useAnalyticsDashboard } from '@/hooks/use-api'
+import { useAnalytics } from '@/hooks/use-api'
 import { 
   ChartBarIcon,
   ClockIcon,
@@ -10,7 +10,7 @@ import {
 } from '@heroicons/react/24/outline'
 
 export default function AnalyticsDashboard() {
-  const { data: analytics, isLoading, error } = useAnalyticsDashboard()
+  const { data: analytics, isLoading, error } = useAnalytics()
 
   if (isLoading) {
     return (
@@ -35,22 +35,14 @@ export default function AnalyticsDashboard() {
   }
 
   const data = analytics || {
-    overview: {
-      total_documents: 0,
-      active_contracts: 0,
-      total_chunks: 0,
-      system_status: 'unknown'
-    },
-    distributions: {
-      departments: {},
-      file_types: {}
-    },
-    timeline: [],
-    generated_at: ''
+    contract_timeline: [],
+    department_distribution: {},
+    expiring_contracts: 0,
+    total_value: 0
   }
 
-  const departmentEntries = Object.entries(data.distributions?.departments || {})
-  const totalContracts = data.overview?.active_contracts || 0
+  const departmentEntries = Object.entries(data.department_distribution)
+  const totalContracts = departmentEntries.reduce((sum, [_, count]) => sum + count, 0)
 
   return (
     <div className="h-full overflow-auto bg-gradient-to-br from-primary-50 via-white to-accent-50">
@@ -94,7 +86,7 @@ export default function AnalyticsDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-secondary-600">Expiring Soon</p>
-                <p className="text-2xl font-bold text-warning-600">{data.timeline?.length || 0}</p>
+                <p className="text-2xl font-bold text-warning-600">{data.expiring_contracts}</p>
               </div>
               <ClockIcon className="h-8 w-8 text-warning-500" />
             </div>
@@ -123,8 +115,8 @@ export default function AnalyticsDashboard() {
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-secondary-600">Total Documents</p>
-                <p className="text-2xl font-bold text-success-600">{data.overview?.total_documents || 0}</p>
+                <p className="text-sm text-secondary-600">Total Value</p>
+                <p className="text-2xl font-bold text-success-600">${data.total_value.toLocaleString()}</p>
               </div>
               <div className="text-2xl">💰</div>
             </div>
@@ -177,13 +169,17 @@ export default function AnalyticsDashboard() {
             <h2 className="text-xl font-semibold text-secondary-900 mb-4">
               Upcoming Expirations
             </h2>
-            {data.timeline && data.timeline.length > 0 ? (
+            {data.contract_timeline.length > 0 ? (
               <div className="space-y-3 max-h-64 overflow-y-auto">
-                {data.timeline
+                {data.contract_timeline
+                  .filter(contract => contract.end_date)
+                  .sort((a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime())
                   .slice(0, 8)
                   .map((contract, index) => {
-                    const daysLeft = contract.days_until_expiry
-                    const isExpiring = daysLeft <= 30
+                    const endDate = new Date(contract.end_date)
+                    const today = new Date()
+                    const daysUntilExpiry = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+                    const isExpiring = daysUntilExpiry <= 30
                     
                     return (
                       <div key={index} className={`p-3 rounded-lg border ${
@@ -191,17 +187,17 @@ export default function AnalyticsDashboard() {
                       }`}>
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <p className="font-medium text-secondary-900 text-sm">Contract #{contract.contract_id?.slice(0, 8) || 'Unknown'}</p>
+                            <p className="font-medium text-secondary-900 text-sm">{contract.name}</p>
                             <p className="text-xs text-secondary-600">{contract.department}</p>
                           </div>
                           <div className="text-right">
                             <p className={`text-xs font-medium ${
                               isExpiring ? 'text-warning-700' : 'text-secondary-700'
                             }`}>
-                              {daysLeft > 0 ? `${daysLeft} days` : daysLeft === 0 ? 'Today' : 'Expired'}
+                              {daysUntilExpiry > 0 ? `${daysUntilExpiry} days` : 'Expired'}
                             </p>
                             <p className="text-xs text-secondary-500">
-                              {new Date(contract.end_date).toLocaleDateString()}
+                              {endDate.toLocaleDateString()}
                             </p>
                           </div>
                         </div>

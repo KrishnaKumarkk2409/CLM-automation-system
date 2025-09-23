@@ -17,17 +17,9 @@ import io
 from datetime import datetime
 import tempfile
 import uuid
-from dotenv import load_dotenv
-load_dotenv(override=True)
 
-# Add the backend directory to the path so we can import from src
-# Get the backend directory (parent of app directory)
-backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(backend_dir)
-
-# Also add the project root for good measure
-project_root = os.path.dirname(backend_dir)
-sys.path.append(project_root)
+# Add the parent directory to the path so we can import from src
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.config import Config
 from src.database import DatabaseManager
@@ -37,15 +29,11 @@ from src.contract_agent import ContractAgent
 from src.document_processor import DocumentProcessor
 
 # Configure logging
-# Create logs directory if it doesn't exist
-logs_dir = os.path.join(project_root, 'logs')
-os.makedirs(logs_dir, exist_ok=True)
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(logs_dir, 'api.log')),
+        logging.FileHandler('./logs/api.log'),
         logging.StreamHandler()
     ]
 )
@@ -163,10 +151,9 @@ async def startup_event():
         
         logger.info("CLM components initialized successfully")
         
-        # Create necessary directories using project root
-        uploads_dir = os.path.join(project_root, 'uploads')
-        os.makedirs(logs_dir, exist_ok=True)
-        os.makedirs(uploads_dir, exist_ok=True)
+        # Create necessary directories
+        os.makedirs('./logs', exist_ok=True)
+        os.makedirs('./uploads', exist_ok=True)
         
     except Exception as e:
         logger.error(f"Failed to initialize CLM components: {e}")
@@ -285,8 +272,8 @@ async def chat_endpoint(chat_request: ChatMessage):
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.websocket("/ws/chat/{conversation_id}")
-async def websocket_chat_endpoint(websocket: WebSocket, conversation_id: str):
+@app.websocket("/ws/{conversation_id}")
+async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
     """WebSocket endpoint for real-time chat"""
     await manager.connect(websocket, conversation_id)
     try:
@@ -294,38 +281,17 @@ async def websocket_chat_endpoint(websocket: WebSocket, conversation_id: str):
             data = await websocket.receive_text()
             message_data = json.loads(data)
             
-            # Process different message types
+            # Process the message
             if message_data.get("type") == "chat":
                 # Process chat message
-                try:
-                    response_data = components["rag_pipeline"].query(message_data["message"])
-                    
-                    # Send response back
-                    await manager.send_personal_message(
-                        json.dumps({
-                            "type": "chat_response",
-                            "response": response_data["answer"],
-                            "sources": response_data.get("sources", []),
-                            "message_id": str(uuid.uuid4()),
-                            "timestamp": datetime.now().isoformat()
-                        }),
-                        websocket
-                    )
-                except Exception as e:
-                    await manager.send_personal_message(
-                        json.dumps({
-                            "type": "error",
-                            "error": str(e),
-                            "timestamp": datetime.now().isoformat()
-                        }),
-                        websocket
-                    )
-            
-            elif message_data.get("type") == "ping":
-                # Handle ping for connection health
+                response_data = components["rag_pipeline"].query(message_data["message"])
+                
+                # Send response back
                 await manager.send_personal_message(
                     json.dumps({
-                        "type": "pong",
+                        "type": "chat_response",
+                        "response": response_data["answer"],
+                        "sources": response_data.get("sources", []),
                         "timestamp": datetime.now().isoformat()
                     }),
                     websocket
@@ -334,113 +300,6 @@ async def websocket_chat_endpoint(websocket: WebSocket, conversation_id: str):
     except WebSocketDisconnect:
         manager.disconnect(websocket, conversation_id)
         logger.info(f"WebSocket disconnected for conversation {conversation_id}")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        manager.disconnect(websocket, conversation_id)
-
-@app.websocket("/ws/processing")
-async def websocket_processing_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for document processing updates"""
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_text()
-            # This endpoint is mainly for sending processing updates to client
-            # Client can send heartbeat messages
-            message_data = json.loads(data)
-            if message_data.get("type") == "heartbeat":
-                await websocket.send_text(json.dumps({
-                    "type": "heartbeat_ack",
-                    "timestamp": datetime.now().isoformat()
-                }))
-    except WebSocketDisconnect:
-        logger.info("Processing WebSocket disconnected")
-    except Exception as e:
-        logger.error(f"Processing WebSocket error: {e}")
-
-# Bulk Processing Endpoints
-
-@app.post("/documents/process/folder")
-async def process_folder_documents():
-    """Process all documents in the configured folder"""
-    try:
-        if "document_processor" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        document_processor = components["document_processor"]
-        results = document_processor.process_folder()
-        
-        return {
-            "processed": results.get("processed", []),
-            "failed": results.get("failed", []),
-            "total_processed": len(results.get("processed", [])),
-            "total_failed": len(results.get("failed", [])),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Folder processing error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/documents/process/batch")
-async def process_batch_documents(document_ids: List[str]):
-    """Process a batch of specific documents"""
-    try:
-        if "document_processor" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        results = {
-            "processed": [],
-            "failed": [],
-            "total": len(document_ids)
-        }
-        
-        # This would require implementing batch processing in document_processor
-        # For now, return a placeholder response
-        return {
-            "message": "Batch processing initiated",
-            "document_ids": document_ids,
-            "status": "processing",
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Batch processing error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# System Configuration Endpoints
-
-@app.get("/system/config")
-async def get_system_config():
-    """Get system configuration (non-sensitive)"""
-    return {
-        "smtp_configured": bool(Config.SMTP_SERVER and Config.EMAIL_USERNAME),
-        "openai_configured": bool(Config.OPENAI_API_KEY),
-        "supabase_configured": bool(Config.SUPABASE_URL and Config.SUPABASE_KEY),
-        "documents_folder": Config.DOCUMENTS_FOLDER,
-        "chunk_size": Config.CHUNK_SIZE,
-        "similarity_threshold": Config.SIMILARITY_THRESHOLD,
-        "system_version": "1.0.0",
-        "timestamp": datetime.now().isoformat()
-    }
-
-@app.post("/system/config/email")
-async def update_email_config(email_config: dict):
-    """Update email configuration"""
-    try:
-        # This would update the configuration
-        # For security, we don't actually update Config directly via API
-        # This would typically update a database or config file
-        
-        return {
-            "message": "Email configuration updated",
-            "smtp_server": email_config.get("smtp_server", "Not provided"),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Email config update error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload")
 async def upload_documents(files: List[UploadFile] = File(...)):
@@ -467,19 +326,12 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                     extract_contracts=True
                 )
                 
-                # Check if the result contains an error message from OCR
-                if not result.get("success", False) and "error" in result:
-                    error_msg = result["error"]
-                    if "ERROR:" in error_msg:
-                        logger.error(f"OCR error for {file.filename}: {error_msg}")
-                
                 results.append({
                     "filename": file.filename,
                     "success": result.get("success", False),
                     "document_id": result.get("document_id"),
                     "chunks_created": result.get("chunks_created", 0),
-                    "contract_extracted": result.get("contract_extracted", False),
-                    "error": result.get("error", "Unknown processing error")
+                    "contract_extracted": result.get("contract_extracted", False)
                 })
                 
             except Exception as e:
@@ -489,12 +341,9 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                     "success": False,
                     "error": str(e)
                 })
-            
-            # Clean up temp file
-            try:
+            finally:
+                # Clean up temporary file
                 os.unlink(tmp_file_path)
-            except Exception as e:
-                logger.warning(f"Failed to delete temp file {tmp_file_path}: {e}")
         
         return {"results": results}
         
@@ -590,197 +439,6 @@ async def get_document(document_id: str):
         
     except Exception as e:
         logger.error(f"Document retrieval error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Analytics and Dashboard Endpoints
-
-@app.get("/analytics/dashboard")
-async def get_analytics_dashboard():
-    """Get comprehensive analytics data for dashboard"""
-    try:
-        if "db_manager" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        db = components["db_manager"]
-        
-        # Get basic statistics
-        docs_result = db.client.table('documents').select('id, file_type, created_at').execute()
-        contracts_result = db.client.table('contracts').select('id, status, department, end_date, start_date').execute()
-        chunks_result = db.client.table('document_chunks').select('id').execute()
-        
-        # Process data
-        total_docs = len(docs_result.data)
-        active_contracts = len([c for c in contracts_result.data if c.get('status') == 'active'])
-        total_chunks = len(chunks_result.data)
-        
-        # Department distribution
-        dept_distribution = {}
-        for contract in contracts_result.data:
-            dept = contract.get('department', 'Unknown')
-            dept_distribution[dept] = dept_distribution.get(dept, 0) + 1
-        
-        # File type distribution
-        file_type_distribution = {}
-        for doc in docs_result.data:
-            file_type = doc.get('file_type', 'unknown')
-            file_type_distribution[file_type] = file_type_distribution.get(file_type, 0) + 1
-        
-        # Contract timeline data (next 90 days)
-        from datetime import datetime, timedelta
-        today = datetime.now().date()
-        timeline_data = []
-        
-        for contract in contracts_result.data:
-            if contract.get('end_date'):
-                try:
-                    end_date = datetime.fromisoformat(contract['end_date'].replace('Z', '+00:00')).date()
-                    days_until_expiry = (end_date - today).days
-                    if -30 <= days_until_expiry <= 90:  # Past 30 days to next 90 days
-                        timeline_data.append({
-                            'contract_id': contract['id'],
-                            'end_date': contract['end_date'],
-                            'days_until_expiry': days_until_expiry,
-                            'department': contract.get('department', 'Unknown'),
-                            'status': contract.get('status', 'unknown')
-                        })
-                except:
-                    continue
-        
-        return {
-            'overview': {
-                'total_documents': total_docs,
-                'active_contracts': active_contracts,
-                'total_chunks': total_chunks,
-                'system_status': 'healthy'
-            },
-            'distributions': {
-                'departments': dept_distribution,
-                'file_types': file_type_distribution
-            },
-            'timeline': timeline_data,
-            'generated_at': datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Analytics dashboard error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/analytics/contracts/expiring")
-async def get_expiring_contracts(days: int = 30):
-    """Get contracts expiring within specified days"""
-    try:
-        if "db_manager" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        expiring = components["db_manager"].get_expiring_contracts(days)
-        
-        return {
-            'expiring_contracts': expiring,
-            'count': len(expiring),
-            'days_threshold': days,
-            'generated_at': datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Expiring contracts error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/analytics/conflicts")
-async def get_contract_conflicts():
-    """Get detected contract conflicts"""
-    try:
-        if "db_manager" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        conflicts = components["db_manager"].find_contract_conflicts()
-        
-        return {
-            'conflicts': conflicts,
-            'count': len(conflicts),
-            'generated_at': datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Contract conflicts error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/analytics/report/generate")
-async def generate_analytics_report(email: str = None):
-    """Generate comprehensive analytics report"""
-    try:
-        if "contract_agent" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        contract_agent = components["contract_agent"]
-        
-        # Generate report
-        report = contract_agent.generate_daily_report()
-        
-        # Send email if provided
-        email_sent = False
-        if email:
-            email_sent = contract_agent.send_report_email(report, email)
-        
-        return {
-            'report': report,
-            'email_sent': email_sent,
-            'recipient': email if email else None
-        }
-        
-    except Exception as e:
-        logger.error(f"Report generation error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Enhanced Document Management
-
-@app.get("/documents")
-async def list_documents(limit: int = 50, offset: int = 0, file_type: str = None):
-    """List documents with filtering"""
-    try:
-        if "db_manager" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        db = components["db_manager"]
-        
-        query = db.client.table('documents').select('*')
-        
-        if file_type:
-            query = query.eq('file_type', file_type)
-        
-        result = query.range(offset, offset + limit - 1).execute()
-        
-        return {
-            'documents': result.data,
-            'count': len(result.data),
-            'limit': limit,
-            'offset': offset
-        }
-        
-    except Exception as e:
-        logger.error(f"Document listing error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/documents/search")
-async def search_documents_advanced(query: str, limit: int = 10, filters: dict = None):
-    """Advanced document search with filters"""
-    try:
-        if "rag_pipeline" not in components:
-            raise HTTPException(status_code=503, detail="System not initialized")
-        
-        # Use RAG pipeline for semantic search
-        similar_docs = components["rag_pipeline"].find_similar_contracts(
-            query, limit=limit
-        )
-        
-        return {
-            'documents': similar_docs,
-            'query': query,
-            'count': len(similar_docs),
-            'generated_at': datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Document search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/documents/{document_id}/download")
@@ -970,46 +628,6 @@ def handle_help_request() -> Dict[str, Any]:
         "sources": []
     }
 
-def run_streamlit_app():
-    """Launch the Streamlit chatbot interface"""
-    import subprocess
-    import sys
-    import os
-    from pathlib import Path
-    
-    # Change to backend directory
-    backend_dir = Path(__file__).parent.parent
-    os.chdir(backend_dir)
-    
-    # Run streamlit with the chatbot interface
-    try:
-        subprocess.run([
-            sys.executable, "-m", "streamlit", "run", 
-            "src/chatbot_interface.py",
-            "--server.port=8501",
-            "--server.address=0.0.0.0",
-            "--theme.base=light"
-        ])
-    except KeyboardInterrupt:
-        print("\n👋 Streamlit chatbot stopped")
-    except Exception as e:
-        print(f"❌ Error running Streamlit: {e}")
-
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="CLM Backend Server")
-    parser.add_argument("--chatbot", action="store_true", help="Run Streamlit chatbot interface")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
-    parser.add_argument("--reload", action="store_true", default=True, help="Enable auto-reload")
-    
-    args = parser.parse_args()
-    
-    if args.chatbot:
-        print("🚀 Starting Streamlit Chatbot Interface...")
-        run_streamlit_app()
-    else:
-        print("🚀 Starting FastAPI Backend Server...")
-        import uvicorn
-        uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

@@ -12,121 +12,54 @@ This system was developed as part of a technical assessment for **DeepRunner AI*
 
 **✨ Solution**: A comprehensive AI-powered system featuring RAG pipelines, LangChain agents, real-time monitoring, and both Streamlit and Next.js interfaces.
 
-# 🚀 Quick Start
+# Quick Start
 
-## Option 1: Docker (Recommended)
+Steps:-
+
+1. Clone Repo
+2. Paste the .env.template file provided in the email thread
+3. Configure env and Run setup.py file
+
+if Mac/linux: 
+```bash
+python3 -m venv env
+
+source env/bin/activate
+
+python setup.py 
+```
+if Windows:
 
 ```bash
-# 1. Clone repository
-git clone <repository-url>
-cd "CLM automation system"
+python -m venv env
 
-# 2. Configure environment
-cp docs/env.template.txt .env
-# Edit .env with your actual values
+./env/Scripts/activate
 
-# 3. Start system
-./start-system.sh
+python setup.py
 ```
-
-## Option 2: Local Development
-
-```bash
-# 1. Clone repository
-git clone <repository-url>
-cd "CLM automation system"
-
-# 2. Start development environment
-./start-dev.sh
+ OCR Processing Issues may arrise if you are in windows OS.
 ```
-
-## Option 3: Manual Setup
-
-### Prerequisites
-- Docker & Docker Compose (for Option 1)
-- Python 3.11+ & Node.js 18+ (for Option 2)
-- OpenAI API key
-- Supabase account
-
-### Environment Configuration
-
-1. **Copy template**: `cp docs/env.template.txt .env`
-2. **Edit .env** with your values:
-
-```env
-# Required
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
-OPENAI_API_KEY=your_openai_key
-
-# Optional (for email reports)
-EMAIL_USERNAME=your_email@gmail.com
-EMAIL_PASSWORD=your_app_password
-REPORT_EMAIL=reports@example.com
+Error: OCR extraction failed
 ```
-
-3. **Database Setup**: Run the SQL schema from `database/schema.sql` in your Supabase project
-
-## 🔍 System Access
-
-- **Main Application**: http://localhost (via nginx)
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
-
-## ⚠️ Troubleshooting
-
-**OCR Issues (Windows)**:
-```bash
-# Download and install Tesseract OCR from:
-# https://github.com/UB-Mannheim/tesseract/wiki
-```
-
-**macOS/Linux OCR**:
+**Solution**: Install Tesseract OCR system package:
 ```bash
 # macOS
 brew install tesseract
 
 # Ubuntu/Debian
 sudo apt-get install tesseract-ocr
+
+# Windows
+# Download from: https://github.com/UB-Mannheim/tesseract/wiki
 ```
 
-For more details, see `docs/PROJECT_STRUCTURE.md`
-
-## 📁 Project Structure
-
-The project has been **recently reorganized** for better maintainability and scalability:
-
-```
-CLM automation system/
-├── 📁 backend/              # FastAPI backend application
-│   ├── app/                 # Main application code
-│   └── src/                 # Source modules (config, database, etc.)
-├── 📁 frontend/             # Next.js frontend application  
-│   ├── src/                 # React components, pages, hooks
-│   └── public/              # Static assets
-├── 📁 database/             # Database schema and migrations
-├── 📁 deployment/           # Docker & nginx configuration
-│   ├── docker-compose.yml   # Container orchestration
-│   └── nginx/               # Reverse proxy config
-├── 📁 scripts/              # Automation & utility scripts
-│   ├── start-system.sh      # Full Docker system startup
-│   ├── start-dev.sh         # Development environment
-│   └── generate_data.py     # Test data generation
-├── 📁 docs/                 # Documentation & templates
-│   ├── env.template.txt     # Environment variables template
-│   └── PROJECT_STRUCTURE.md # Detailed structure guide
-├── 📁 documents/            # Sample contracts (PDF, DOCX, TXT)
-├── 📁 logs/                 # Application logs
-└── 📁 uploads/              # Document upload storage
+4. python main.py --chatbot
+```bash 
+# To See streamlit UI of the raw code.  
 ```
 
-**🔗 Convenience Symlinks** (in root directory):
-- `docker-compose.yml` → `deployment/docker-compose.yml`
-- `start-system.sh` → `scripts/start-system.sh`
-- `start-dev.sh` → `scripts/start-dev.sh`
+Thanks.
 
-> **Migration Note**: If upgrading from the old structure, your existing `.env` file will work without changes.
 
 ## 🌟 Features
 
@@ -147,50 +80,36 @@ CLM automation system/
 - **Source Citation**: All responses include references to source documents
 - **Document Similarity**: Find contracts with similar terms or structures
 
-## 🏠 System Architecture
-
-### Modern Multi-Interface Architecture
+## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Next.js UI      │    │   Streamlit     │    │  Daily Agent    │
-│  (Production)    │    │   Chatbot       │    │  (Automated)    │
-└────────┬────────┘    └────────┬────────┘    └────────┬────────┘
-         │                      │                      │
-         └─────────────┬────────────────────────────┘
-                      │
-           ┌──────────┴──────────────────┐
-           │      FastAPI Backend     │
-           │  (REST API + WebSocket) │
-           └──────────┬──────────────────┘
-                      │
-    ┌─────────────────┴─────────────────────┐
-    │                   AI Layer                    │
-    ├───────────────────────────────────────────┤
-    │ RAG Pipeline | Embeddings | LangChain      │
-    └─────────────────────┬─────────────────────┘
-                       │
-        ┌──────────────┴───────────────┐
-        │   Document Processor    │
-        │  (PDF/DOCX/TXT + OCR)   │
-        └──────────────┬───────────────┘
-                       │
-        ┌──────────────┴───────────────┐
-        │   Supabase Database     │
-        │  (PostgreSQL + Vector)  │
-        └─────────────────────────────┘
+│   Streamlit     │    │   CLI Interface │    │  Daily Agent    │
+│   Chatbot       │    │   (main.py)     │    │  (Scheduled)    │
+└─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
+          │                      │                      │
+          └──────────────┬───────────────────────────────┘
+                         │
+          ┌─────────────┴───────────┐
+          │   RAG Pipeline          │
+          │  (LangChain + OpenAI)   │
+          └─────────────┬───────────┘
+                        │
+          ┌─────────────┴───────────┐
+          │   Embedding Manager     │
+          │  (OpenAI Embeddings)    │
+          └─────────────┬───────────┘
+                        │
+          ┌─────────────┴───────────┐
+          │   Document Processor    │
+          │  (PDF/DOCX/TXT + OCR)   │
+          └─────────────┬───────────┘
+                        │
+          ┌─────────────┴───────────┐
+          │   Supabase Database     │
+          │  (PostgreSQL + Vector)  │
+          └─────────────────────────┘
 ```
-
-### Technology Stack
-
-| Layer | Technology | Purpose |
-|-------|------------|----------|
-| **Frontend** | Next.js 14, React, Tailwind CSS | Modern responsive UI with SSR |
-| **Backend** | FastAPI, Python 3.11 | High-performance async API |
-| **AI/ML** | OpenAI GPT-4, LangChain, RAG | Intelligent document processing |
-| **Database** | Supabase (PostgreSQL + pgvector) | Vector storage & similarity search |
-| **Infrastructure** | Docker, Nginx | Containerization & reverse proxy |
-| **Monitoring** | Python logging, Email alerts | System health & notifications |
 
 ## 📋 Requirements
 
@@ -204,33 +123,17 @@ CLM automation system/
 
 See `requirements.txt` for complete list.
 
-## 📋 Installation & Setup
+## 🚀 Installation
 
-### 1. Clone & Environment Setup
+### 1. Clone Repository
 ```bash
 git clone <repository-url>
 cd "CLM automation system"
-cp docs/env.template.txt .env  # Copy environment template
 ```
 
-### 2. Choose Installation Method
-
-#### Option A: Docker (Production-Ready)
+### 2. Install Dependencies
 ```bash
-# Configure .env file with your credentials
-./start-system.sh
-```
-
-#### Option B: Development Setup
-```bash
-# Backend
-cd backend && pip install -r requirements.txt
-
-# Frontend  
-cd frontend && npm install
-
-# Start development environment
-./start-dev.sh
+pip install -r requirements.txt
 ```
 
 ### 3. Set up Supabase Database [Utilise .env provided on email , db already configured.]
@@ -336,115 +239,83 @@ CHUNK_OVERLAP=200
 SIMILARITY_THRESHOLD=0.7
 ```
 
-## 📖 Usage Guide
+## 📖 Usage
 
-### 🌐 Web Application (Recommended)
-
-Access the modern Next.js interface:
-
-- **Main App**: http://localhost (via nginx proxy)
-- **Direct Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-
-**Key Features**:
-- 💬 Interactive chat with contracts
-- 📈 Analytics dashboard
-- 📄 Document upload and processing
-- ⚙️ System settings and configuration
-
-### 📦 API Endpoints
-
-**Document Management**:
+### 1. Generate Sample Data
 ```bash
-# Upload contract
-curl -X POST "http://localhost:8000/upload" \
-  -F "file=@contract.pdf"
-
-# Get all contracts
-curl "http://localhost:8000/contracts"
-
-# Search contracts  
-curl "http://localhost:8000/search?query=termination+clause"
+python src/generate_synthetic_data.py
 ```
 
-**AI-Powered Chat**:
+This creates 15 realistic contract documents in various formats with intentional variations and conflicts for testing.
+
+### 2. Process Documents
+```bash
+# Process all documents in the documents folder
+python main.py --process
+
+# Process documents from a specific folder
+python main.py --process --folder /path/to/contracts
+```
+
+### 3. Interactive Mode
+```bash
+# Start interactive CLI
+python main.py --interactive
+
+# Available commands in interactive mode:
+CLM> help
+CLM> process
+CLM> What contracts expire in the next 30 days?
+CLM> similar software license agreement
+CLM> find TechCorp
+CLM> report
+CLM> monitor
+```
+
+### 4. Streamlit Chatbot
+```bash
+# Launch web interface
+python main.py --chatbot
+# or
+streamlit run src/chatbot_interface.py
+```
+
+### 5. Command Line Queries
 ```bash
 # Ask questions about contracts
-curl -X POST "http://localhost:8000/chat" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Which contracts expire next month?"}'
-
-# WebSocket chat (real-time)
-# Connect to: ws://localhost:8000/ws/chat
-```
-
-**Analytics & Reports**:
-```bash
-# Get system analytics
-curl "http://localhost:8000/analytics"
+python main.py --query "What are the payment terms in the TechCorp contract?"
 
 # Generate daily report
-curl -X POST "http://localhost:8000/report"
+python main.py --report
 
-# Check system health
-curl "http://localhost:8000/health"
-```
+# Run monitoring cycle
+python main.py --monitor
 
-### 🔄 Data Management
-
-**Generate Test Data**:
-```bash
-# Create sample contracts for testing
-python scripts/generate_data.py
-```
-
-**Process Documents**:
-```bash
-# Via API
-curl -X POST "http://localhost:8000/process" \
-  -F "file=@documents/contract.pdf"
-
-# Via CLI (backend directory)
-cd backend && python -m app.main --process ../documents/
-```
-
-### 📊 Legacy Streamlit Interface
-
-For backward compatibility:
-```bash
-cd backend && python -m app.main --chatbot
-# Opens Streamlit interface at http://localhost:8501
+# Find similar documents
+python main.py --similar "maintenance agreement"
+python main.py --find "TechCorp_Software_License_2024.pdf"
 ```
 
 ## 🎯 System Components
 
-### 📱 Frontend (`frontend/`)
-- **Next.js 14**: Modern React framework with SSR
-- **Tailwind CSS**: Utility-first responsive styling
-- **React Query**: Efficient API state management
-- **WebSocket Support**: Real-time chat functionality
-- **Components**: Reusable UI elements and pages
+### Document Processor (`src/document_processor.py`)
+- **File Support**: PDF, DOCX, TXT
+- **OCR Capability**: Handles scanned PDFs using Tesseract
+- **Text Chunking**: Intelligent document segmentation
+- **Metadata Extraction**: Automatic contract information parsing
 
-### ⚙️ Backend (`backend/`)
-- **FastAPI**: High-performance async API framework
-- **WebSocket**: Real-time communication support
-- **Document Processing**: Multi-format file handling with OCR
-- **AI Integration**: RAG pipeline with LangChain & OpenAI
-- **Database Management**: Supabase operations and vector search
+### RAG Pipeline (`src/rag_pipeline.py`)
+- **Vector Search**: Supabase-powered similarity matching
+- **Context Preparation**: Smart chunk selection and formatting
+- **LLM Integration**: GPT-4 powered responses with source citations
+- **Query Processing**: Natural language understanding
 
-### 📊 Core Modules (`backend/src/`)
-- **Document Processor**: PDF, DOCX, TXT processing with OCR fallback
-- **RAG Pipeline**: Vector search and context-aware responses
-- **Contract Agent**: Automated monitoring and conflict detection
-- **Database Manager**: Supabase integration with vector operations
-- **Embeddings**: OpenAI embedding generation and storage
-
-### 📦 Infrastructure (`deployment/`)
-- **Docker Compose**: Multi-container orchestration
-- **Nginx**: Reverse proxy and load balancing
-- **Environment Management**: Centralized configuration
-- **SSL Support**: HTTPS certificate handling
+### Contract Agent (`src/contract_agent.py`)
+- **LangChain Agents**: Tool-equipped AI for complex tasks
+- **Daily Monitoring**: Automated contract health checks
+- **Conflict Detection**: Advanced pattern matching for inconsistencies
+- **Report Generation**: Professional formatted reports
+- **Email Integration**: SMTP-based alert system
 
 ### Database Manager (`src/database.py`)
 - **Supabase Integration**: Full CRUD operations
@@ -614,156 +485,38 @@ Error: Memory allocation failed
 - API quota consumption
 - Log file sizes
 
-## 👥 Development
-
-### 🔧 Development Environment
-
-**Start Development Mode**:
-```bash
-./start-dev.sh  # Starts both backend and frontend with hot reload
-```
-
-**Manual Development Setup**:
-```bash
-# Backend (Terminal 1)
-cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Frontend (Terminal 2)  
-cd frontend
-npm run dev
-```
-
-### 📝 Available Scripts
-
-| Script | Purpose | Location |
-|--------|---------|----------|
-| `./start-system.sh` | Production Docker setup | Root (symlink) |
-| `./start-dev.sh` | Development environment | Root (symlink) |
-| `scripts/generate_data.py` | Create test contracts | `scripts/` |
-
-### 🧪 API Testing
-
-**Interactive API Documentation**:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-- OpenAPI JSON: http://localhost:8000/openapi.json
-
-**Example API Calls**:
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Upload document
-curl -X POST http://localhost:8000/upload \
-  -F "file=@documents/sample.pdf"
-
-# Chat with AI
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Show me expiring contracts"}'
-```
-
 ## 🚀 Deployment
 
-### 🐳 Production Deployment (Docker)
+### Production Deployment
+1. Set up production Supabase instance
+2. Configure production OpenAI API keys
+3. Set up secure SMTP for email reports
+4. Implement backup and disaster recovery
+5. Set up monitoring and alerting
 
-**Prerequisites**:
-- Docker & Docker Compose
-- Domain name (optional)
-- SSL certificates (for HTTPS)
+### Docker Deployment (Optional)
+```dockerfile
+FROM python:3.9-slim
 
-**Steps**:
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+CMD ["python", "main.py", "--interactive"]
+```
+
+### Scheduled Tasks
+Set up cron jobs for daily monitoring:
 ```bash
-# 1. Configure production environment
-cp docs/env.template.txt .env
-# Edit .env with production values
+# Daily report at 9 AM
+0 9 * * * cd /path/to/clm && python main.py --monitor
 
-# 2. Deploy with Docker
-./start-system.sh
-
-# 3. Set up reverse proxy (nginx already included)
-# 4. Configure SSL certificates in deployment/nginx/
+# Weekly document processing
+0 1 * * 1 cd /path/to/clm && python main.py --process
 ```
 
-### ⚙️ Environment Variables
-
-**Required**:
-```env
-SUPABASE_URL=your_production_supabase_url
-SUPABASE_KEY=your_production_supabase_key
-OPENAI_API_KEY=your_openai_api_key
-```
-
-**Optional** (for email reports):
-```env
-EMAIL_USERNAME=your_email@company.com
-EMAIL_PASSWORD=your_app_password
-REPORT_EMAIL=reports@company.com
-```
-
-### 🔄 Automated Tasks
-
-Set up cron jobs for automated contract monitoring:
-```bash
-# Daily contract monitoring at 9 AM
-0 9 * * * curl -X POST http://localhost:8000/report
-
-# Weekly system health check
-0 1 * * 1 curl http://localhost:8000/health
-```
-
-### 🔍 Monitoring & Logs
-
-**Log Locations**:
-```bash
-logs/clm_system.log    # Application logs
-logs/errors.log        # Error tracking  
-logs/access.log        # API access logs
-```
-
-**Health Monitoring**:
-```bash
-# Check system health
-curl http://localhost:8000/health
-
-# Monitor Docker containers
-docker-compose -f deployment/docker-compose.yml ps
-
-# View logs
-docker-compose -f deployment/docker-compose.yml logs -f
-```
-
----
-
-## 🔗 Additional Resources
-
-- **[Project Structure Guide](docs/PROJECT_STRUCTURE.md)** - Detailed architecture overview
-- **[Environment Template](docs/env.template.txt)** - Configuration template
-- **[API Documentation](http://localhost:8000/docs)** - Interactive API explorer
-- **[Database Schema](database/schema.sql)** - Complete SQL schema
-
-## 🤝 Contributing & Support
-
-This project was developed as a technical demonstration for **DeepRunner AI**. The system showcases modern AI-powered document processing and contract lifecycle management capabilities.
-
-### Key Achievements ✨
-- ✅ **Full-stack Architecture**: React + FastAPI + Supabase
-- ✅ **AI Integration**: RAG pipeline with OpenAI GPT-4
-- ✅ **Document Processing**: Multi-format with OCR support  
-- ✅ **Real-time Features**: WebSocket chat and notifications
-- ✅ **Production Ready**: Docker deployment with nginx
-- ✅ **Clean Architecture**: Modular, maintainable codebase
-
-### Technical Highlights 🚀
-- **Modern Stack**: Next.js 14, FastAPI, Supabase, Docker
-- **AI/ML Pipeline**: LangChain, OpenAI embeddings, vector search
-- **Enterprise Features**: Automated monitoring, conflict detection
-- **Developer Experience**: Hot reload, API docs, comprehensive logging
-
----
-
-**Built with ❤️ for DeepRunner AI** | 🚀 **Contract Intelligence Platform**
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch

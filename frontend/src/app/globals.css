@@ -11,8 +11,7 @@ html {
 
 body {
   font-family: 'Inter', sans-serif;
-  background-color: theme('colors.background');
-  color: theme('colors.foreground');
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
 }
 
@@ -36,26 +35,6 @@ body {
   background: rgba(0, 0, 0, 0.5);
 }
 
-/* Enhanced custom scrollbar for specific elements */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 10px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #c5c5c5;
-  border-radius: 10px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #a0a0a0;
-}
-
 /* Glass morphism utility */
 @layer utilities {
   .glass {
@@ -76,39 +55,39 @@ body {
 /* Custom component styles */
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center px-4 py-2 bg-primary hover:bg-primary-hover text-white font-medium rounded-lg shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+    @apply inline-flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
   }
   
   .btn-secondary {
-    @apply inline-flex items-center px-4 py-2 bg-muted hover:bg-secondary-200 text-foreground font-medium rounded-lg shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-secondary-500 focus:ring-offset-2;
+    @apply inline-flex items-center px-4 py-2 bg-secondary-100 hover:bg-secondary-200 text-secondary-700 font-medium rounded-lg shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-secondary-500 focus:ring-offset-2;
   }
   
   .btn-ghost {
-    @apply inline-flex items-center px-4 py-2 bg-transparent hover:bg-muted text-foreground hover:text-secondary-700 font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-secondary-500 focus:ring-offset-2;
+    @apply inline-flex items-center px-4 py-2 bg-transparent hover:bg-secondary-100 text-secondary-600 hover:text-secondary-700 font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-secondary-500 focus:ring-offset-2;
   }
   
   .input-field {
-    @apply block w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm placeholder-secondary-400 focus:outline-none focus:ring-primary focus:border-primary transition-colors duration-200;
+    @apply block w-full px-3 py-2 border border-secondary-300 rounded-md shadow-sm placeholder-secondary-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200;
   }
   
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-secondary-200/50;
+    @apply bg-white rounded-xl shadow-soft border border-secondary-200/50;
   }
   
   .card-hover {
-    @apply card hover:shadow-md hover:-translate-y-1 transition-all duration-300;
+    @apply card hover:shadow-soft-lg hover:-translate-y-1 transition-all duration-300;
   }
   
   .gradient-text {
-    @apply bg-gradient-to-r from-primary to-primary-500 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-primary-600 to-accent-600 bg-clip-text text-transparent;
   }
   
   .chat-bubble-user {
-    @apply bg-primary text-white rounded-2xl rounded-br-md px-4 py-2 max-w-xs ml-auto;
+    @apply bg-primary-600 text-white rounded-2xl rounded-br-md px-4 py-2 max-w-xs ml-auto;
   }
   
   .chat-bubble-assistant {
-    @apply bg-white text-foreground rounded-2xl rounded-bl-md px-4 py-2 max-w-sm shadow-sm border border-secondary-200/50;
+    @apply bg-white text-secondary-800 rounded-2xl rounded-bl-md px-4 py-2 max-w-sm shadow-sm border border-secondary-200/50;
   }
   
   .loading-dots {
@@ -120,18 +99,6 @@ body {
     animation-delay: var(--delay, 0s);
   }
   
-  /* Status badges */
-  .badge-active {
-    @apply px-2 py-1 text-xs font-medium rounded-full bg-success/20 text-success;
-  }
-  
-  .badge-expiring {
-    @apply px-2 py-1 text-xs font-medium rounded-full bg-warning/20 text-warning;
-  }
-  
-  .badge-expired {
-    @apply px-2 py-1 text-xs font-medium rounded-full bg-destructive/20 text-destructive;
-  }
   .loading-dots > div:nth-child(2) {
     --delay: 0.2s;
   }
@@ -162,24 +129,6 @@ body {
   .animate-slide-in-left {
     animation: slideInLeft 0.3s ease-out;
   }
-}
-
-/* Animation for gradient pulse */
-@keyframes pulse-gradient {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-.animate-pulse-gradient {
-  background-size: 200% 200%;
-  animation: pulse-gradient 2s ease infinite;
 }
 
 @keyframes fadeInUp {
