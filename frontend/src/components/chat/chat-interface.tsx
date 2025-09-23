@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
@@ -196,17 +196,19 @@ export default function ChatInterface() {
   }
 
   // Build conversation list from history
-  const conversations = useMemo(() => {
+  function buildConversations() {
     const map: Record<string, { id: string; last: string; count: number; updatedAt: string }> = {}
-    (historyData?.messages || []).forEach(m => {
+    const list = historyData?.messages || []
+    for (const m of list) {
       const item = map[m.conversation_id] || { id: m.conversation_id, last: '', count: 0, updatedAt: m.created_at }
       item.count += 1
       item.last = m.content
       item.updatedAt = m.created_at
       map[m.conversation_id] = item
-    })
+    }
     return Object.values(map).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  }, [historyData]);
+  }
+  const conversations = buildConversations()
 
   return (
     <div className="h-full bg-white">
@@ -398,6 +400,7 @@ export default function ChatInterface() {
             </div>
           </div>
         </div>
+      </div>
       </div>
       
       {/* Document Preview Modal */}
