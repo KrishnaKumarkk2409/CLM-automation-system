@@ -6,8 +6,11 @@ Handles generation and management of document embeddings.
 import logging
 from typing import List, Dict, Any, Optional
 import openai
+from dotenv import load_dotenv
 from src.config import Config
 from src.database import DatabaseManager
+
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 

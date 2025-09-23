@@ -9,6 +9,7 @@ import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
+from dotenv import load_dotenv
 
 # File processing imports
 import PyPDF2
@@ -20,6 +21,8 @@ from PIL import Image
 # LangChain imports
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document as LangchainDocument
+
+load_dotenv(override=True)
 
 from src.config import Config
 from src.database import DatabaseManager
@@ -293,22 +296,34 @@ class DocumentProcessor:
     def _extract_with_ocr(self, file_path: str, metadata: Dict) -> str:
         """Extract text using OCR for scanned PDFs"""
         try:
-            # Convert PDF pages to images
-            images = convert_from_path(file_path, dpi=300)
-            content = ""
+            # Check if tesseract is installed
+            try:
+                pytesseract.get_tesseract_version()
+            except pytesseract.TesseractNotFoundError:
+                logger.error("Tesseract OCR is not installed or not in PATH")
+                return "ERROR: Tesseract OCR is not installed or not in PATH. Please install Tesseract OCR."
             
-            for i, image in enumerate(images):
-                # Perform OCR on each page
-                page_text = pytesseract.image_to_string(image, lang='eng')
-                if page_text.strip():
-                    content += f"\n--- Page {i + 1} (OCR) ---\n{page_text}"
-            
-            metadata["ocr_pages"] = len(images)
-            return content
+            # Check if poppler is available for pdf2image
+            try:
+                # Convert PDF pages to images
+                images = convert_from_path(file_path, dpi=300)
+                content = ""
+                
+                for i, image in enumerate(images):
+                    # Perform OCR on each page
+                    page_text = pytesseract.image_to_string(image, lang='eng')
+                    if page_text.strip():
+                        content += f"\n--- Page {i + 1} (OCR) ---\n{page_text}"
+                
+                metadata["ocr_pages"] = len(images)
+                return content
+            except Exception as pdf_error:
+                logger.error(f"PDF to image conversion failed: {pdf_error}")
+                return "ERROR: PDF to image conversion failed. Please ensure Poppler is installed."
             
         except Exception as e:
             logger.error(f"OCR extraction failed for {file_path}: {e}")
-            return ""
+            return f"ERROR: OCR extraction failed: {str(e)}"
     
     def _extract_from_docx(self, file_path: str, metadata: Dict) -> tuple:
         """Extract content from DOCX files"""

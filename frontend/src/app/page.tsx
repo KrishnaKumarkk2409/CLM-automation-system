@@ -18,22 +18,33 @@ import {
   SparklesIcon,
   ShieldCheckIcon
 } from '@heroicons/react/24/solid'
+import Header from '@/components/layout/Header'
 import ChatInterface from '@/components/chat/chat-interface'
 import Sidebar from '@/components/layout/sidebar'
 import StatsCards from '@/components/dashboard/stats-cards'
 import WelcomeScreen from '@/components/welcome/welcome-screen'
-import AnalyticsDashboard from '@/components/analytics/analytics-dashboard'
+import AnalyticsDashboard from '@/components/analytics/enhanced-analytics-dashboard'
+import CleanDashboard from '@/components/dashboard/clean-dashboard'
 import DocumentUpload from '@/components/upload/document-upload'
+import SettingsPage from '@/components/settings/settings-page'
 import { useSystemStats } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
+import { useAdvancedDocumentSearch } from '@/hooks/use-api'
+import FloatingChatButton from '@/components/FloatingChatButton'
+import ChatModal from '@/components/chat/ChatModal'
 
-type View = 'chat' | 'analytics' | 'upload' | 'settings'
+type View = 'dashboard' | 'chat' | 'analytics' | 'upload' | 'settings'
 
 export default function HomePage() {
-  const [currentView, setCurrentView] = useState<View>('chat')
+  const [currentView, setCurrentView] = useState<View>('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [hasStartedChat, setHasStartedChat] = useState(false)
   const { data: stats, isLoading: statsLoading } = useSystemStats()
+  const [searchTerm, setSearchTerm] = useState('')
+  const [showSearchModal, setShowSearchModal] = useState(false)
+  const [searchResults, setSearchResults] = useState<any[] | null>(null)
+  const advancedSearch = useAdvancedDocumentSearch()
+  const [chatOpen, setChatOpen] = useState(false)
 
   // Sample questions for welcome screen
   const sampleQuestions = [
@@ -71,6 +82,14 @@ export default function HomePage() {
     }
 
     switch (currentView) {
+      case 'dashboard':
+        return (
+          <CleanDashboard 
+            onUpload={() => setCurrentView('upload')}
+            onAnalytics={() => setCurrentView('analytics')}
+            onStartChat={handleStartChat}
+          />
+        )
       case 'chat':
         return <ChatInterface />
       case 'analytics':
@@ -78,9 +97,20 @@ export default function HomePage() {
       case 'upload':
         return <DocumentUpload />
       case 'settings':
-        return <div className="p-8"><div className="text-center">Settings coming soon...</div></div>
+        return <SettingsPage />
       default:
         return <ChatInterface />
+    }
+  }
+
+  const runHeaderSearch = async () => {
+    if (!searchTerm.trim()) return
+    try {
+      const data = await advancedSearch.mutateAsync({ query: searchTerm, limit: 12 })
+      setSearchResults(data.documents || [])
+      setShowSearchModal(true)
+    } catch (e) {
+      toast.error('Search failed')
     }
   }
 
@@ -89,62 +119,11 @@ export default function HomePage() {
 
       {/* Main Content Area - Full Width */}
       <div className="w-full flex flex-col min-w-0">
-        {/* Header */}
-        <header className="bg-white/80 backdrop-blur-sm border-b border-secondary-200/50 px-4 lg:px-6 py-3 lg:py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 lg:space-x-4">
-              
-              <div className="flex items-center space-x-2 lg:space-x-3">
-                <div className="p-1.5 lg:p-2 bg-gradient-to-br from-primary-500 to-accent-500 rounded-lg shadow-sm">
-                  <ChatBubbleLeftRightIcon className="h-5 w-5 lg:h-6 lg:w-6 text-white" />
-                </div>
-                <div className="hidden sm:block">
-                  <h1 className="text-lg lg:text-xl font-semibold text-secondary-900">
-                    CLM Automation
-                  </h1>
-                  <p className="text-xs lg:text-sm text-secondary-500">
-                    AI-powered contract management
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 lg:space-x-4">
-              {/* System Status - Hidden on mobile */}
-              <div className="hidden md:flex items-center space-x-2 text-xs lg:text-sm">
-                <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
-                <span className="text-secondary-600">Online</span>
-              </div>
-
-              {/* View Toggle Buttons - Responsive */}
-              <div className="flex items-center bg-secondary-100 p-1 rounded-lg">
-                {[
-                  { id: 'chat', icon: ChatBubbleLeftRightIcon, label: 'Chat' },
-                  { id: 'analytics', icon: ChartBarIcon, label: 'Analytics' },
-                  { id: 'upload', icon: DocumentArrowUpIcon, label: 'Upload' },
-                ].map((view) => {
-                  const IconComponent = view.icon
-                  return (
-                    <motion.button
-                      key={view.id}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setCurrentView(view.id as View)}
-                      className={`p-1.5 lg:p-2 rounded-md transition-colors ${
-                        currentView === view.id
-                          ? 'bg-white shadow-sm text-primary-600'
-                          : 'text-secondary-600 hover:text-secondary-900'
-                      }`}
-                      title={view.label}
-                    >
-                      <IconComponent className="h-4 w-4 lg:h-5 lg:w-5" />
-                    </motion.button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </header>
+        {/* Header - Using the new Header component */}
+        <Header onSearchResults={(results) => {
+          setSearchResults(results);
+          setShowSearchModal(true);
+        }} />
 
         {/* Stats Cards - Responsive */}
         {!statsLoading && stats && (
@@ -176,6 +155,36 @@ export default function HomePage() {
           className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
+      )}
+
+      {/* Floating Chat */}
+      <FloatingChatButton onClick={() => setChatOpen(true)} />
+      <ChatModal open={chatOpen} onClose={() => setChatOpen(false)} />
+
+      {/* Search Modal */}
+      {showSearchModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-lg border border-secondary-200 w-full max-w-3xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-secondary-200">
+              <h3 className="text-sm font-semibold text-secondary-900">Search Results</h3>
+              <button onClick={() => setShowSearchModal(false)} className="text-secondary-500 hover:text-secondary-900">
+                ✕
+              </button>
+            </div>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-auto">
+              {(searchResults || []).map((doc, i) => (
+                <div key={i} className="border border-secondary-200 rounded-lg p-3 bg-secondary-50">
+                  <div className="text-sm font-medium text-secondary-900 truncate">{doc.filename}</div>
+                  <div className="text-xs text-secondary-600 mt-1">{doc.file_type?.toUpperCase()} • {Math.round((doc.similarity || 0) * 100)}%</div>
+                  <div className="text-xs text-secondary-700 italic mt-2">{doc.relevant_excerpt?.slice(0, 160)}...</div>
+                </div>
+              ))}
+              {(!searchResults || searchResults.length === 0) && (
+                <div className="text-center text-secondary-500 py-12">No results</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

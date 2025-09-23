@@ -19,9 +19,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Copy the source code from parent directory
-COPY ../src ./src
-
 # Create necessary directories
 RUN mkdir -p logs uploads
 

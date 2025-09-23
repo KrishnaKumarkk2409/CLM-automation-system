@@ -48,24 +48,24 @@ export default function StatsCards({ stats }: StatsCardsProps) {
   const getColorClasses = (color: string) => {
     const colorMap = {
       primary: {
-        bg: 'from-primary-500 to-primary-600',
-        text: 'text-primary-600',
+        bg: 'from-primary to-primary-500',
+        text: 'text-primary',
         light: 'bg-primary-50'
       },
       success: {
-        bg: 'from-success-500 to-success-600',
-        text: 'text-success-600',
-        light: 'bg-success-50'
-      },
-      accent: {
-        bg: 'from-accent-500 to-accent-600',
-        text: 'text-accent-600',
-        light: 'bg-accent-50'
+        bg: 'from-success to-success-500',
+        text: 'text-success',
+        light: 'bg-success/10'
       },
       warning: {
-        bg: 'from-warning-500 to-warning-600',
-        text: 'text-warning-600',
-        light: 'bg-warning-50'
+        bg: 'from-warning to-warning-500',
+        text: 'text-warning',
+        light: 'bg-warning/10'
+      },
+      destructive: {
+        bg: 'from-destructive to-destructive-500',
+        text: 'text-destructive',
+        light: 'bg-destructive/10'
       }
     }
     return colorMap[color as keyof typeof colorMap] || colorMap.primary

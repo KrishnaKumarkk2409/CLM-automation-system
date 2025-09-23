@@ -8,6 +8,14 @@ const nextConfig = {
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000',
   },
   output: 'standalone',
+  // Fix webpack caching issues
+  webpack: (config, { dev, isServer }) => {
+    // Force cache invalidation during development
+    if (dev) {
+      config.cache = false;
+    }
+    return config;
+  },
 }
 
 module.exports = nextConfig

@@ -8,7 +8,10 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, date, timedelta
 import json
 from supabase import create_client, Client
+from dotenv import load_dotenv
 from src.config import Config
+
+load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 

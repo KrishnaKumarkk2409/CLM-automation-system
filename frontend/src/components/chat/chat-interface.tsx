@@ -13,7 +13,7 @@ import {
   XMarkIcon,
   EyeIcon
 } from '@heroicons/react/24/outline'
-import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments } from '@/hooks/use-api'
+import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments, useProcessFolderDocuments, useGenerateReport } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
 import { useDropzone } from 'react-dropzone'
 import DocumentPreview from '../document/document-preview'
@@ -26,12 +26,17 @@ export default function ChatInterface() {
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [previewDocument, setPreviewDocument] = useState<{id: string, filename: string} | null>(null)
+  const [searchResults, setSearchResults] = useState<any[] | null>(null)
+  const [showReportModal, setShowReportModal] = useState(false)
+  const [reportEmail, setReportEmail] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const sendMessage = useSendMessage()
   const uploadDocs = useUploadDocuments()
   const searchDocs = useSearchDocuments()
+  const processFolder = useProcessFolderDocuments()
+  const generateReport = useGenerateReport()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -124,11 +129,37 @@ export default function ChatInterface() {
     
     try {
       const result = await searchDocs.mutateAsync({ query: searchQuery })
+      setSearchResults(result.documents)
       toast.success(`Found ${result.documents.length} documents`)
       setShowSearch(false)
       setSearchQuery('')
     } catch (error) {
       toast.error('Search failed')
+    }
+  }
+
+  const handleProcessFolder = async () => {
+    try {
+      const res = await processFolder.mutateAsync()
+      const processed = res?.total_processed ?? (res?.processed?.length ?? 0)
+      toast.success(`Processed ${processed} documents`)
+    } catch (e) {
+      toast.error('Failed to process folder')
+    }
+  }
+
+  const handleGenerateReport = async () => {
+    if (!reportEmail || !reportEmail.includes('@')) {
+      toast.error('Enter a valid email')
+      return
+    }
+    try {
+      await generateReport.mutateAsync({ email: reportEmail, include_expiring: true, include_conflicts: true, include_analytics: true })
+      toast.success('Report sent')
+      setShowReportModal(false)
+      setReportEmail('')
+    } catch (e) {
+      toast.error('Failed to send report')
     }
   }
 
@@ -160,6 +191,16 @@ export default function ChatInterface() {
           <MagnifyingGlassIcon className="h-5 w-5 lg:h-6 lg:w-6" />
         </motion.button>
         
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={handleProcessFolder}
+          className={`p-2 lg:p-3 rounded-lg transition-colors hover:bg-secondary-100 text-secondary-600`}
+          title="Process Folder"
+        >
+          <PlusIcon className="h-5 w-5 lg:h-6 lg:w-6" />
+        </motion.button>
+
         <motion.button
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
@@ -344,6 +385,30 @@ export default function ChatInterface() {
         )}
 
         <div ref={messagesEndRef} />
+
+        {/* Search Results Panel */}
+        {searchResults && (
+          <div className="p-4 bg-white border border-secondary-200 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-secondary-900">Search Results</p>
+              <button className="text-xs text-secondary-500 hover:text-secondary-800" onClick={() => setSearchResults(null)}>Clear</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {searchResults.slice(0, 6).map((doc: any, i: number) => (
+                <div key={i} className="border border-secondary-200 rounded-lg p-3 bg-secondary-50">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium text-secondary-900 truncate">{doc.filename}</div>
+                    {doc.document_id && (
+                      <button className="text-xs px-2 py-1 bg-primary-100 text-primary-700 rounded" onClick={() => setPreviewDocument({ id: doc.document_id, filename: doc.filename })}>View</button>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs text-secondary-600">{doc.file_type?.toUpperCase()} • {Math.round((doc.similarity || 0) * 100)}%</div>
+                  <div className="mt-2 text-xs text-secondary-700 italic">{doc.relevant_excerpt?.slice(0, 140)}...</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         </div>
 
         {/* Input Area - Compact */}
@@ -373,8 +438,21 @@ export default function ChatInterface() {
               </motion.button>
             </div>
             
-            <div className="mt-2 text-xs text-secondary-500 text-center hidden lg:block">
-              Press Enter to send, Shift+Enter for new line
+            <div className="mt-2 flex items-center justify-between text-xs text-secondary-500">
+              <span className="hidden lg:block">Press Enter to send, Shift+Enter for new line</span>
+              <div className="space-x-3">
+                <button onClick={() => setShowReportModal(true)} className="hover:text-secondary-800">Generate Report</button>
+                <button onClick={() => setMessages([])} className="hover:text-secondary-800">Clear</button>
+                <button onClick={() => {
+                  const blob = new Blob([JSON.stringify({ messages }, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `chat_${new Date().toISOString()}.json`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }} className="hover:text-secondary-800">Export</button>
+              </div>
             </div>
           </div>
         </div>
@@ -388,6 +466,24 @@ export default function ChatInterface() {
           isOpen={!!previewDocument}
           onClose={() => setPreviewDocument(null)}
         />
+      )}
+
+      {/* Generate Report Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-5 w-full max-w-md border border-secondary-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-secondary-900">Generate & Send Report</h3>
+              <button onClick={() => setShowReportModal(false)}><XMarkIcon className="h-5 w-5 text-secondary-600" /></button>
+            </div>
+            <label className="block text-sm text-secondary-700 mb-1">Email address</label>
+            <input value={reportEmail} onChange={(e) => setReportEmail(e.target.value)} type="email" placeholder="you@example.com" className="w-full px-3 py-2 border border-secondary-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowReportModal(false)} className="px-3 py-2 text-secondary-600">Cancel</button>
+              <button disabled={generateReport.isPending} onClick={handleGenerateReport} className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50">{generateReport.isPending ? 'Sending…' : 'Send Report'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -4,6 +4,19 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+/* Design tokens */
+:root {
+  --color-primary: 214 88% 27%;
+  --color-primary-hover: 214 88% 35%;
+  --color-bg: 248 250 252; /* rgb */
+  --color-foreground: 203 23% 30%;
+  --color-success: 142 76% 36%;
+  --color-warning: 38 92% 50%;
+  --color-danger: 0 84% 60%;
+  --color-muted: 210 40% 98%;
+  --radius: 0.5rem;
+}
+
 /* Global styles */
 html {
   scroll-behavior: smooth;
@@ -11,7 +24,7 @@ html {
 
 body {
   font-family: 'Inter', sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-color: rgb(var(--color-bg));
   min-height: 100vh;
 }
 

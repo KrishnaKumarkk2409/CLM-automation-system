@@ -6,9 +6,25 @@ Loads environment variables and provides centralized configuration.
 import os
 from dotenv import load_dotenv
 from typing import Optional
+from pathlib import Path
 
-# Load environment variables with override=True to ensure fresh reload
-load_dotenv(override=True)
+# Load environment variables with explicit search paths and override=True
+# We try backend/.env, project-root/.env, CWD/.env, and their .env.local variants
+def _load_env_files():
+    backend_dir = Path(__file__).resolve().parents[1]
+    project_root = backend_dir.parent
+    candidates = [
+        backend_dir / '.env',
+        project_root / '.env',
+        Path.cwd() / '.env',
+        backend_dir / '.env.local',
+        project_root / '.env.local',
+    ]
+    for path in candidates:
+        if path.exists():
+            load_dotenv(dotenv_path=path, override=True)
+
+_load_env_files()
 
 class Config:
     """Configuration class for CLM system"""
@@ -76,8 +92,8 @@ class Config:
         Returns:
             bool: True if configuration is valid after reload
         """
-        # Reload environment variables
-        load_dotenv(override=True)
+        # Reload environment variables from known locations
+        _load_env_files()
         
         # Update class variables with new values
         cls.SUPABASE_URL = os.getenv("SUPABASE_URL", "")
