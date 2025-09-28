@@ -5,7 +5,6 @@ Implements document retrieval and question answering using LangChain.
 
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
@@ -88,27 +87,39 @@ Instructions:
                     "sources": [],
                     "error": "Failed to generate query embedding"
                 }
-            
-            # Step 2: Retrieve relevant document chunks
-            relevant_chunks = self.db_manager.similarity_search(
+
+            # Step 2: Attempt to enhance the query for broader recall
+            enhanced_query = self._enhance_query(question)
+            if enhanced_query != question:
+                enhanced_embedding = self.embedding_manager.generate_query_embedding(enhanced_query)
+                if enhanced_embedding:
+                    query_embedding = enhanced_embedding
+
+            # Step 3: Retrieve relevant document chunks with adaptive thresholds
+            initial_threshold = self._determine_similarity_threshold(question)
+            thresholds = self._build_threshold_schedule(initial_threshold)
+            raw_chunks = self._search_with_fallback(
                 query_embedding=query_embedding,
-                threshold=Config.SIMILARITY_THRESHOLD,
-                limit=max_results
+                thresholds=thresholds,
+                limit=max_results * 2
             )
-            
-            if not relevant_chunks:
+
+            if not raw_chunks:
                 return {
                     "answer": "I don't have any relevant information to answer this question based on the available contract documents.",
                     "sources": [],
                     "retrieved_chunks": 0
                 }
-            
-            # Step 3: Prepare context and generate answer
+
+            # Step 4: Rerank chunks to prioritize the most relevant context for the question
+            relevant_chunks = self._rerank_chunks(raw_chunks, question, max_results)
+
+            # Step 5: Prepare context and generate answer
             context, sources = self._prepare_context_and_sources(relevant_chunks)
-            
-            # Step 4: Generate response using LLM
+
+            # Step 6: Generate response using LLM
             response = self._generate_response(question, context)
-            
+
             logger.info(f"RAG query completed successfully with {len(relevant_chunks)} chunks retrieved")
             
             return {
@@ -130,23 +141,35 @@ Instructions:
         """Prepare context string and source information from retrieved chunks"""
         context_parts = []
         sources = []
-        
+        documents_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+
         for i, chunk in enumerate(chunks):
-            # Get document information
-            document = self.db_manager.get_document_by_id(chunk["document_id"])
-            if document:
-                # Format context with source attribution
-                context_part = f"[Source {i+1}: {document['filename']}]\n{chunk['chunk_text']}\n"
-                context_parts.append(context_part)
-                
-                # Add source information
-                sources.append({
-                    "id": i + 1,
-                    "filename": document['filename'],
-                    "document_id": chunk['document_id'],
-                    "similarity": round(chunk.get('similarity', 0), 3),
-                    "chunk_text": chunk['chunk_text'][:200] + "..." if len(chunk['chunk_text']) > 200 else chunk['chunk_text']
-                })
+            doc_id = chunk.get("document_id")
+            if not doc_id:
+                continue
+
+            if doc_id not in documents_cache:
+                documents_cache[doc_id] = self.db_manager.get_document_by_id(doc_id)
+
+            document = documents_cache.get(doc_id)
+            if not document:
+                continue
+
+            chunk_text = chunk.get('chunk_text') or ''
+
+            # Format context with source attribution
+            context_part = f"[Source {i+1}: {document['filename']}]\n{chunk_text}\n"
+            context_parts.append(context_part)
+
+            # Add source information
+            formatted_text = chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text
+            sources.append({
+                "id": i + 1,
+                "filename": document['filename'],
+                "document_id": doc_id,
+                "similarity": round(chunk.get('similarity', 0), 3),
+                "chunk_text": formatted_text
+            })
         
         context = "\n\n".join(context_parts)
         return context, sources
@@ -200,27 +223,42 @@ Instructions:
             if not query_embedding:
                 return []
             
-            # Retrieve similar chunks
-            chunks = self.db_manager.similarity_search(
+            thresholds = self._build_threshold_schedule(Config.SIMILARITY_THRESHOLD)
+            raw_chunks = self._search_with_fallback(
                 query_embedding=query_embedding,
-                threshold=Config.SIMILARITY_THRESHOLD,
-                limit=limit
+                thresholds=thresholds,
+                limit=max(limit * 2, 5)
             )
-            
+
+            if not raw_chunks:
+                return []
+
+            ranked_chunks = self._rerank_chunks(raw_chunks, query, limit)
+
             # Enrich with document information
             enriched_results = []
-            for chunk in chunks:
-                document = self.db_manager.get_document_by_id(chunk["document_id"])
-                if document:
-                    enriched_results.append({
-                        "chunk_text": chunk["chunk_text"],
-                        "similarity": chunk.get("similarity", 0),
-                        "document_id": chunk["document_id"],
-                        "filename": document["filename"],
-                        "file_type": document["file_type"],
-                        "document_metadata": document.get("metadata", {})
-                    })
-            
+            documents_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+            for chunk in ranked_chunks:
+                doc_id = chunk.get("document_id")
+                if not doc_id:
+                    continue
+
+                if doc_id not in documents_cache:
+                    documents_cache[doc_id] = self.db_manager.get_document_by_id(doc_id)
+
+                document = documents_cache.get(doc_id)
+                if not document:
+                    continue
+
+                enriched_results.append({
+                    "chunk_text": chunk.get("chunk_text") or "",
+                    "similarity": chunk.get("similarity", 0),
+                    "document_id": doc_id,
+                    "filename": document.get("filename"),
+                    "file_type": document.get("file_type"),
+                    "document_metadata": document.get("metadata", {})
+                })
+
             return enriched_results
             
         except Exception as e:
@@ -263,17 +301,20 @@ Analysis:
             if not query_embedding:
                 return {"error": "Could not process query"}
             
-            chunks = self.db_manager.similarity_search(
+            thresholds = self._build_threshold_schedule(0.6)
+            raw_chunks = self._search_with_fallback(
                 query_embedding=query_embedding,
-                threshold=0.6,  # Lower threshold for broader context
-                limit=8
+                thresholds=thresholds,
+                limit=12
             )
-            
-            if not chunks:
+
+            if not raw_chunks:
                 return {"insights": "No relevant contract information found"}
-            
-            context, sources = self._prepare_context_and_sources(chunks)
-            
+
+            insight_chunks = self._rerank_chunks(raw_chunks, contract_query, 8)
+
+            context, sources = self._prepare_context_and_sources(insight_chunks)
+
             # Generate insights
             chain = (
                 {"context": RunnablePassthrough(), "question": RunnablePassthrough()}
@@ -281,13 +322,13 @@ Analysis:
                 | self.llm
                 | StrOutputParser()
             )
-            
+
             insights = chain.invoke({"context": context, "question": contract_query})
-            
+
             return {
                 "insights": insights,
                 "sources": sources,
-                "analyzed_chunks": len(chunks)
+                "analyzed_chunks": len(insight_chunks)
             }
             
         except Exception as e:
@@ -311,28 +352,30 @@ Analysis:
             if not reference_embedding:
                 return []
             
-            # Find similar document chunks
-            similar_chunks = self.db_manager.similarity_search(
+            thresholds = self._build_threshold_schedule(0.7)
+            similar_chunks = self._search_with_fallback(
                 query_embedding=reference_embedding,
-                threshold=0.7,  # Higher threshold for similarity
-                limit=limit * 2  # Get more chunks to find unique documents
+                thresholds=thresholds,
+                limit=max(limit * 3, 6)
             )
-            
+
             # Group by document and get unique similar documents
             seen_documents = set()
             similar_documents = []
-            
+
             for chunk in similar_chunks:
-                doc_id = chunk["document_id"]
+                doc_id = chunk.get("document_id")
                 if doc_id not in seen_documents:
                     document = self.db_manager.get_document_by_id(doc_id)
                     if document:
+                        chunk_text = chunk.get("chunk_text") or ""
+                        excerpt = chunk_text[:300] + "..." if len(chunk_text) > 300 else chunk_text
                         similar_documents.append({
                             "document_id": doc_id,
-                            "filename": document["filename"],
+                            "filename": document.get("filename"),
                             "similarity": chunk.get("similarity", 0),
-                            "file_type": document["file_type"],
-                            "relevant_excerpt": chunk["chunk_text"][:300] + "..."
+                            "file_type": document.get("file_type"),
+                            "relevant_excerpt": excerpt
                         })
                         seen_documents.add(doc_id)
                         
@@ -344,3 +387,139 @@ Analysis:
         except Exception as e:
             logger.error(f"Similar contract search failed: {e}")
             return []
+
+    def _enhance_query(self, question: str) -> str:
+        """Enhance the query to improve retrieval relevance"""
+        contract_terms = [
+            "contract", "agreement", "terms", "conditions", "clause",
+            "provision", "obligation", "party", "legal", "document"
+        ]
+
+        aspect_keywords = {
+            "expir": ["expiration", "renewal", "term", "duration"],
+            "payment": ["financial", "cost", "price", "amount", "fee"],
+            "party": ["company", "organization", "entity", "vendor"],
+            "risk": ["liability", "responsibility", "indemnity", "insurance"],
+            "termination": ["end", "cancel", "breach", "violation"]
+        }
+
+        question_lower = question.lower()
+        enhanced_terms: List[str] = []
+
+        for aspect, keywords in aspect_keywords.items():
+            if aspect in question_lower:
+                enhanced_terms.extend(keywords[:2])
+
+        if enhanced_terms:
+            enhanced_query = f"{question} {' '.join(enhanced_terms)}"
+        else:
+            enhanced_query = f"{question} {' '.join(contract_terms[:3])}"
+
+        logger.debug("Enhanced query: '%s' -> '%s'", question, enhanced_query)
+        return enhanced_query
+
+    def _determine_similarity_threshold(self, question: str) -> float:
+        """Determine appropriate similarity threshold based on query type"""
+        question_lower = question.lower()
+
+        specific_indicators = [
+            "specific", "exact", "particular", "named", "called",
+            "company name", "contract name", "agreement with"
+        ]
+
+        general_indicators = [
+            "overview", "summary", "general", "all", "any",
+            "what are", "tell me about", "explain"
+        ]
+
+        if any(indicator in question_lower for indicator in specific_indicators):
+            return 0.8
+        if any(indicator in question_lower for indicator in general_indicators):
+            return 0.65
+        return Config.SIMILARITY_THRESHOLD
+
+    def _build_threshold_schedule(self, initial_threshold: float) -> List[float]:
+        """Create a descending list of thresholds for fallback retrieval"""
+        candidate_values = [initial_threshold, 0.75, 0.65, 0.55, 0.45, 0.0]
+        thresholds: List[float] = []
+
+        for value in candidate_values:
+            if value is None:
+                continue
+            clamped = max(min(value, 0.95), 0.0)
+            if not thresholds or abs(thresholds[-1] - clamped) > 1e-3:
+                thresholds.append(clamped)
+
+        return thresholds
+
+    def _search_with_fallback(self, query_embedding: List[float], thresholds: List[float], limit: int) -> List[Dict[str, Any]]:
+        """Run similarity search with fallback thresholds until results are found"""
+        for attempt, threshold in enumerate(thresholds, start=1):
+            chunks = self.db_manager.similarity_search(
+                query_embedding=query_embedding,
+                threshold=threshold,
+                limit=limit
+            )
+            if chunks:
+                logger.debug(
+                    "Similarity search succeeded on attempt %s with threshold %.2f and %s chunks",
+                    attempt,
+                    threshold,
+                    len(chunks)
+                )
+                return chunks
+
+        logger.debug("Similarity search returned no chunks after %s attempts", len(thresholds))
+        return []
+
+    def _rerank_chunks(self, chunks: List[Dict[str, Any]], question: str, limit: int) -> List[Dict[str, Any]]:
+        """Re-rank document chunks based on relevance to the question"""
+        if not chunks:
+            return []
+
+        question_lower = question.lower()
+        question_tokens = set(question_lower.split())
+
+        scored_chunks: List[Dict[str, Any]] = []
+        for chunk in chunks:
+            score = chunk.get('similarity', 0)
+            chunk_text = chunk.get('chunk_text') or ''
+            chunk_text_lower = chunk_text.lower()
+            chunk_tokens = set(chunk_text_lower.split())
+
+            token_overlap = len(question_tokens.intersection(chunk_tokens))
+            overlap_bonus = min(token_overlap * 0.05, 0.2)
+
+            contract_indicators = [
+                'agreement', 'contract', 'party', 'clause', 'provision',
+                'terms', 'conditions', 'obligations', 'rights'
+            ]
+            contract_bonus = sum(0.02 for term in contract_indicators if term in chunk_text_lower)
+            contract_bonus = min(contract_bonus, 0.15)
+
+            type_bonus = 0.0
+            if 'expir' in question_lower and any(term in chunk_text_lower for term in ['expir', 'renew', 'term', 'end']):
+                type_bonus = 0.1
+            elif 'payment' in question_lower and any(term in chunk_text_lower for term in ['payment', 'cost', 'fee', 'amount']):
+                type_bonus = 0.1
+            elif 'party' in question_lower and any(term in chunk_text_lower for term in ['company', 'corporation', 'entity']):
+                type_bonus = 0.1
+
+            final_score = score + overlap_bonus + contract_bonus + type_bonus
+
+            scored_chunks.append({
+                **chunk,
+                'relevance_score': final_score,
+                'token_overlap': token_overlap,
+                'contract_relevance': contract_bonus
+            })
+
+        scored_chunks.sort(key=lambda item: item.get('relevance_score', 0), reverse=True)
+
+        min_relevance = 0.6
+        filtered_chunks = [chunk for chunk in scored_chunks if chunk.get('relevance_score', 0) >= min_relevance]
+
+        if limit <= 0:
+            return filtered_chunks or scored_chunks
+
+        return (filtered_chunks[:limit] if filtered_chunks else scored_chunks[:limit])

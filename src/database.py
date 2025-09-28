@@ -94,17 +94,27 @@ class DatabaseManager:
                          threshold: float = Config.SIMILARITY_THRESHOLD, 
                          limit: int = 5) -> List[Dict[str, Any]]:
         """Perform similarity search using the database function"""
+        match_threshold = threshold if threshold is not None else Config.SIMILARITY_THRESHOLD
         try:
             result = self.client.rpc('match_documents', {
                 'query_embedding': query_embedding,
-                'match_threshold': threshold,
-                'match_count': limit
+                'match_threshold': match_threshold,
+                'match_count': max(limit, 1)
             }).execute()
-            
-            return result.data
+
+            data = result.data or []
+            if not isinstance(data, list):
+                logger.warning(
+                    "Unexpected payload from match_documents RPC: %s", type(data)
+                )
+                return []
+
+            # Ensure results are ordered by similarity in descending order
+            data.sort(key=lambda item: item.get('similarity', 0), reverse=True)
+            return data
         except Exception as e:
-            logger.error(f"Failed to perform similarity search: {e}")
-            raise
+            logger.error(f"Failed to perform similarity search (threshold={match_threshold}, limit={limit}): {e}")
+            return []
     
     def get_expiring_contracts(self, days: int = Config.EXPIRATION_WARNING_DAYS) -> List[Dict[str, Any]]:
         """Get contracts expiring within specified days"""
