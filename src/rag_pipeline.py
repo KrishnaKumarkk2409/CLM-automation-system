@@ -4,6 +4,7 @@ Implements document retrieval and question answering using LangChain.
 """
 
 import logging
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -103,6 +104,9 @@ Instructions:
                 thresholds=thresholds,
                 limit=max_results * 2
             )
+
+            if not raw_chunks:
+                raw_chunks = self._direct_text_lookup(question, max_results * 3)
 
             if not raw_chunks:
                 return {
@@ -231,6 +235,9 @@ Instructions:
             )
 
             if not raw_chunks:
+                raw_chunks = self._direct_text_lookup(query, limit * 3)
+
+            if not raw_chunks:
                 return []
 
             ranked_chunks = self._rerank_chunks(raw_chunks, query, limit)
@@ -309,6 +316,9 @@ Analysis:
             )
 
             if not raw_chunks:
+                raw_chunks = self._direct_text_lookup(contract_query, 16)
+
+            if not raw_chunks:
                 return {"insights": "No relevant contract information found"}
 
             insight_chunks = self._rerank_chunks(raw_chunks, contract_query, 8)
@@ -358,6 +368,9 @@ Analysis:
                 thresholds=thresholds,
                 limit=max(limit * 3, 6)
             )
+
+            if not similar_chunks:
+                similar_chunks = self._direct_text_lookup(reference_text, max(limit * 3, 6))
 
             # Group by document and get unique similar documents
             seen_documents = set()
@@ -471,6 +484,74 @@ Analysis:
 
         logger.debug("Similarity search returned no chunks after %s attempts", len(thresholds))
         return []
+
+    def _direct_text_lookup(self, question: str, limit: int) -> List[Dict[str, Any]]:
+        """Fallback to direct text search against chunk contents"""
+        candidates = self._generate_text_search_candidates(question)
+        for phrase in candidates:
+            results = self.db_manager.search_chunks_by_text(phrase, limit=limit)
+            if results:
+                enriched = []
+                for item in results:
+                    enriched.append({
+                        **item,
+                        'similarity': item.get('similarity', 0.82),
+                        'relevance_score': 0.82  # seed for reranking adjustments
+                    })
+                logger.debug("Text search matched phrase '%s' with %s chunks", phrase, len(enriched))
+                return enriched
+
+        return []
+
+    def _generate_text_search_candidates(self, question: str) -> List[str]:
+        """Extract candidate phrases for direct text lookup"""
+        # Normalize whitespace and strip markup
+        compact = ' '.join(question.split())
+        if not compact:
+            return []
+
+        candidates: List[str] = []
+
+        # Prefer chunks from individual lines (useful for pasted clauses)
+        for line in question.splitlines():
+            cleaned = self._clean_candidate_phrase(line)
+            if cleaned:
+                candidates.append(cleaned)
+
+        if not candidates:
+            candidates.append(self._clean_candidate_phrase(compact))
+
+        # Add sliding windows to improve partial matches
+        tokens = compact.split()
+        window_size = 10
+        if len(tokens) > window_size:
+            step = max(len(tokens) // 5, 1)
+            for start in range(0, len(tokens) - window_size + 1, step):
+                segment = ' '.join(tokens[start:start + window_size])
+                cleaned = self._clean_candidate_phrase(segment)
+                if cleaned:
+                    candidates.append(cleaned)
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_candidates = []
+        for phrase in candidates:
+            if phrase not in seen:
+                seen.add(phrase)
+                unique_candidates.append(phrase)
+
+        return unique_candidates[:20]
+
+    def _clean_candidate_phrase(self, text: str) -> str:
+        """Normalize a candidate phrase for SQL ILIKE search"""
+        stripped = text.strip().strip('?"')
+        if len(stripped) < 8:
+            return ''
+
+        # Remove repeated whitespace and dangling punctuation
+        stripped = re.sub(r'\s+', ' ', stripped)
+        stripped = stripped.strip(".,;:?!\"' )")
+        return stripped
 
     def _rerank_chunks(self, chunks: List[Dict[str, Any]], question: str, limit: int) -> List[Dict[str, Any]]:
         """Re-rank document chunks based on relevance to the question"""

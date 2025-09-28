@@ -115,6 +115,27 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to perform similarity search (threshold={match_threshold}, limit={limit}): {e}")
             return []
+
+    def search_chunks_by_text(self, text: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Perform direct text search on document chunks using ILIKE"""
+        cleaned_text = text.strip()
+        if not cleaned_text:
+            return []
+
+        pattern = f"%{cleaned_text}%"
+        try:
+            query = (
+                self.client.table('document_chunks')
+                .select('document_id, chunk_index, chunk_text')
+                .ilike('chunk_text', pattern)
+                .limit(max(limit, 1))
+            )
+
+            result = query.execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Failed to perform text search for '{cleaned_text[:40]}...': {e}")
+            return []
     
     def get_expiring_contracts(self, days: int = Config.EXPIRATION_WARNING_DAYS) -> List[Dict[str, Any]]:
         """Get contracts expiring within specified days"""
