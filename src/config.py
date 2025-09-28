@@ -31,7 +31,7 @@ class Config:
     DOCUMENTS_FOLDER: str = os.getenv("DOCUMENTS_FOLDER", "./documents")
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))
-    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.7"))
+    SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.8"))
     
     # Embedding Configuration
     EMBEDDING_MODEL: str = "text-embedding-ada-002"

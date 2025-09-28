@@ -28,13 +28,14 @@ from src.embeddings import EmbeddingManager
 from src.rag_pipeline import RAGPipeline
 from src.contract_agent import ContractAgent
 from src.document_processor import DocumentProcessor
+from src.enhanced_document_processor import EnhancedDocumentProcessor
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('./logs/api.log'),
+        logging.FileHandler('/Users/krishnakumar/Code/CLM automation system/backend/logs/api.log'),
         logging.StreamHandler()
     ]
 )
@@ -171,13 +172,15 @@ async def startup_event():
         rag_pipeline = RAGPipeline(db_manager, embedding_manager)
         contract_agent = ContractAgent(db_manager)
         document_processor = DocumentProcessor(db_manager)
+        enhanced_document_processor = EnhancedDocumentProcessor(db_manager)
         
         components = {
             "db_manager": db_manager,
             "embedding_manager": embedding_manager,
             "rag_pipeline": rag_pipeline,
             "contract_agent": contract_agent,
-            "document_processor": document_processor
+            "document_processor": document_processor,
+            "enhanced_document_processor": enhanced_document_processor
         }
         
         logger.info("CLM components initialized successfully")
@@ -439,7 +442,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
 
 @app.post("/upload")
 async def upload_documents(files: List[UploadFile] = File(...)):
-    """Upload and process documents"""
+    """Upload and process documents (standard processing)"""
     try:
         if "document_processor" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
@@ -487,6 +490,124 @@ async def upload_documents(files: List[UploadFile] = File(...)):
     except Exception as e:
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload-enhanced")
+async def upload_documents_enhanced(
+    files: List[UploadFile] = File(...),
+    use_vision: bool = True,
+    custom_chunk_size: Optional[int] = None
+):
+    """Enhanced upload with Vision API and large document support"""
+    try:
+        if "enhanced_document_processor" not in components:
+            raise HTTPException(status_code=503, detail="Enhanced processor not initialized")
+        
+        enhanced_processor = components["enhanced_document_processor"]
+        results = []
+        
+        for file in files:
+            logger.info(f"Starting enhanced processing of {file.filename}")
+            
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp_file:
+                content = await file.read()
+                tmp_file.write(content)
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # Process with enhanced processor
+                result = await enhanced_processor.process_document_async(
+                    file_path=tmp_file_path,
+                    filename=file.filename,
+                    extract_contracts=True,
+                    custom_chunk_size=custom_chunk_size,
+                    metadata={
+                        "source": "frontend_upload_enhanced", 
+                        "uploaded_via": "web_interface_enhanced",
+                        "vision_enabled": use_vision,
+                        "file_size": len(content)
+                    },
+                    use_vision=use_vision
+                )
+                
+                results.append({
+                    "filename": file.filename,
+                    "success": result.get("success", False),
+                    "document_id": result.get("document_id"),
+                    "chunks_created": result.get("chunks_created", 0),
+                    "contract_extracted": result.get("contract_extracted", False),
+                    "visual_content_found": result.get("visual_content_found", False),
+                    "visual_elements": result.get("visual_elements", 0),
+                    "embedding_success": result.get("embedding_success", False),
+                    "processing_method": "enhanced_with_vision" if use_vision else "enhanced_no_vision"
+                })
+                
+                logger.info(f"Enhanced processing completed for {file.filename}: "
+                          f"Success: {result.get('success')}, "
+                          f"Chunks: {result.get('chunks_created', 0)}, "
+                          f"Visual elements: {result.get('visual_elements', 0)}")
+                
+            except Exception as e:
+                logger.error(f"Enhanced processing failed for {file.filename}: {e}")
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": str(e),
+                    "processing_method": "enhanced_failed"
+                })
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(tmp_file_path)
+                except:
+                    pass
+        
+        return {
+            "results": results,
+            "processing_type": "enhanced",
+            "vision_enabled": use_vision,
+            "total_files": len(files),
+            "successful_files": len([r for r in results if r.get("success")])
+        }
+        
+    except Exception as e:
+        logger.error(f"Enhanced upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/processing-status/{progress_id}")
+async def get_processing_status(progress_id: str):
+    """Get the processing status for a document"""
+    try:
+        if "enhanced_document_processor" not in components:
+            raise HTTPException(status_code=503, detail="Enhanced processor not initialized")
+        
+        enhanced_processor = components["enhanced_document_processor"]
+        
+        if progress_id in enhanced_processor.current_progress:
+            return enhanced_processor.current_progress[progress_id]
+        else:
+            raise HTTPException(status_code=404, detail="Progress ID not found")
+    
+    except Exception as e:
+        logger.error(f"Error getting processing status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/supported-file-types")
+async def get_supported_file_types():
+    """Get list of supported file types for enhanced processing"""
+    return {
+        "standard_types": ["pdf", "docx", "txt"],
+        "enhanced_types": ["pdf", "docx", "txt", "png", "jpg", "jpeg", "gif", "bmp", "tiff"],
+        "vision_supported": ["pdf", "png", "jpg", "jpeg", "gif", "bmp", "tiff"],
+        "large_document_support": ["pdf"],
+        "features": {
+            "vision_api": "Extract text and analyze images using OpenAI Vision API",
+            "large_pdf_batching": "Process large PDFs in batches to avoid memory issues",
+            "progress_tracking": "Real-time progress updates for long operations",
+            "enhanced_chunking": "Smart chunking with visual content integration",
+            "signature_detection": "Detect signatures and seals in visual content"
+        }
+    }
 
 @app.post("/search")
 async def search_documents(search_request: DocumentSearchRequest):
