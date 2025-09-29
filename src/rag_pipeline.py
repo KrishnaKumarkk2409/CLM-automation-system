@@ -105,7 +105,13 @@ Instructions:
                 limit=max_results * 2
             )
 
-            if not raw_chunks:
+            if raw_chunks:
+                raw_chunks = self._maybe_augment_with_direct_lookup(
+                    question,
+                    raw_chunks,
+                    max_results * 3
+                )
+            else:
                 raw_chunks = self._direct_text_lookup(question, max_results * 3)
 
             if not raw_chunks:
@@ -234,7 +240,13 @@ Instructions:
                 limit=max(limit * 2, 5)
             )
 
-            if not raw_chunks:
+            if raw_chunks:
+                raw_chunks = self._maybe_augment_with_direct_lookup(
+                    query,
+                    raw_chunks,
+                    limit * 3
+                )
+            else:
                 raw_chunks = self._direct_text_lookup(query, limit * 3)
 
             if not raw_chunks:
@@ -315,7 +327,13 @@ Analysis:
                 limit=12
             )
 
-            if not raw_chunks:
+            if raw_chunks:
+                raw_chunks = self._maybe_augment_with_direct_lookup(
+                    contract_query,
+                    raw_chunks,
+                    18
+                )
+            else:
                 raw_chunks = self._direct_text_lookup(contract_query, 16)
 
             if not raw_chunks:
@@ -369,7 +387,13 @@ Analysis:
                 limit=max(limit * 3, 6)
             )
 
-            if not similar_chunks:
+            if similar_chunks:
+                similar_chunks = self._maybe_augment_with_direct_lookup(
+                    reference_text,
+                    similar_chunks,
+                    max(limit * 4, 8)
+                )
+            else:
                 similar_chunks = self._direct_text_lookup(reference_text, max(limit * 3, 6))
 
             # Group by document and get unique similar documents
@@ -488,20 +512,95 @@ Analysis:
     def _direct_text_lookup(self, question: str, limit: int) -> List[Dict[str, Any]]:
         """Fallback to direct text search against chunk contents"""
         candidates = self._generate_text_search_candidates(question)
-        for phrase in candidates:
-            results = self.db_manager.search_chunks_by_text(phrase, limit=limit)
-            if results:
-                enriched = []
-                for item in results:
-                    enriched.append({
-                        **item,
-                        'similarity': item.get('similarity', 0.82),
-                        'relevance_score': 0.82  # seed for reranking adjustments
-                    })
-                logger.debug("Text search matched phrase '%s' with %s chunks", phrase, len(enriched))
-                return enriched
+        if not candidates:
+            return []
 
-        return []
+        logger.debug("Text search candidates: %s", candidates)
+
+        combined: List[Dict[str, Any]] = []
+        seen_pairs = set()
+
+        for phrase in candidates:
+            remaining = max(limit - len(combined), 1)
+            results = self.db_manager.search_chunks_by_text(phrase, limit=remaining)
+            if not results:
+                continue
+
+            for item in results:
+                doc_id = item.get('document_id')
+                chunk_index = item.get('chunk_index')
+                key = (doc_id, chunk_index)
+                if key in seen_pairs:
+                    continue
+
+                combined.append({
+                    **item,
+                    'similarity': item.get('similarity', 0.82),
+                    'relevance_score': 0.82
+                })
+                seen_pairs.add(key)
+
+                if len(combined) >= limit:
+                    break
+
+            if len(combined) >= limit:
+                break
+
+        if combined:
+            logger.debug("Text search returned %s unique chunks", len(combined))
+
+        return combined
+
+    def _maybe_augment_with_direct_lookup(
+        self,
+        question: str,
+        chunks: List[Dict[str, Any]],
+        limit: int
+    ) -> List[Dict[str, Any]]:
+        """Optionally blend direct text search hits with similarity results"""
+        if not self._should_use_direct_lookup(question):
+            return chunks
+
+        direct_hits = self._direct_text_lookup(question, limit)
+        if not direct_hits:
+            return chunks
+
+        combined: List[Dict[str, Any]] = []
+        seen_pairs = set()
+
+        for item in chunks + direct_hits:
+            doc_id = item.get('document_id')
+            chunk_index = item.get('chunk_index')
+            key = (doc_id, chunk_index)
+            if key in seen_pairs:
+                continue
+            combined.append(item)
+            seen_pairs.add(key)
+            if len(combined) >= limit:
+                break
+
+        logger.info(
+            "Augmented similarity results with %s direct text hits (total %s)",
+            len(direct_hits),
+            len(combined)
+        )
+        return combined
+
+    def _should_use_direct_lookup(self, question: str) -> bool:
+        """Heuristic to decide when to blend in direct text search results"""
+        normalized = question.strip()
+        if not normalized:
+            return False
+
+        if '\n' in normalized:
+            return True
+
+        if len(normalized) >= 120:
+            return True
+
+        clause_markers = ['shall be entitled', 'section', 'clause', 'fsow', 'sow']
+        normalized_lower = normalized.lower()
+        return any(marker in normalized_lower for marker in clause_markers)
 
     def _generate_text_search_candidates(self, question: str) -> List[str]:
         """Extract candidate phrases for direct text lookup"""
@@ -523,11 +622,21 @@ Analysis:
 
         # Add sliding windows to improve partial matches
         tokens = compact.split()
-        window_size = 10
-        if len(tokens) > window_size:
-            step = max(len(tokens) // 5, 1)
-            for start in range(0, len(tokens) - window_size + 1, step):
+        if len(tokens) >= 4:
+            window_size = min(8, max(len(tokens) // 2, 4))
+            step = max(window_size // 2, 1)
+
+            max_start = max(len(tokens) - window_size + 1, 1)
+            for start in range(0, max_start, step):
                 segment = ' '.join(tokens[start:start + window_size])
+                cleaned = self._clean_candidate_phrase(segment)
+                if cleaned:
+                    candidates.append(cleaned)
+
+            # Add shorter n-grams to catch partial overlaps
+            short_window = 5
+            for start in range(0, max(len(tokens) - short_window + 1, 1)):
+                segment = ' '.join(tokens[start:start + short_window])
                 cleaned = self._clean_candidate_phrase(segment)
                 if cleaned:
                     candidates.append(cleaned)
@@ -550,7 +659,16 @@ Analysis:
 
         # Remove repeated whitespace and dangling punctuation
         stripped = re.sub(r'\s+', ' ', stripped)
-        stripped = stripped.strip(".,;:?!\"' )")
+        strip_chars = ".,;:?!\"' )("
+        stripped = stripped.strip(strip_chars)
+
+        # Remove simple list prefixes (e.g., "c)", "-", "•")
+        stripped = re.sub(r'^[\-•*]+\s*', '', stripped)
+        stripped = re.sub(r'^[A-Za-z]\)\s*', '', stripped)
+
+        if len(stripped) < 6:
+            return ''
+
         return stripped
 
     def _rerank_chunks(self, chunks: List[Dict[str, Any]], question: str, limit: int) -> List[Dict[str, Any]]:
