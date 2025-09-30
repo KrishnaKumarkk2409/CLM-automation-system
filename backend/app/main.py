@@ -603,20 +603,84 @@ async def get_supported_file_types():
 
 @app.post("/search")
 async def search_documents(search_request: DocumentSearchRequest):
-    """Search for similar documents"""
+    """Search for similar documents using traditional cosine similarity"""
     try:
         if "rag_pipeline" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
-        
+
         similar_docs = components["rag_pipeline"].find_similar_contracts(
             search_request.query,
             limit=search_request.limit
         )
-        
+
         return {"documents": similar_docs}
-        
+
     except Exception as e:
         logger.error(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class HybridSearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    similarity_threshold: float = 0.6
+    candidate_pool: int = 50
+    cosine_weight: float = 0.7
+
+@app.post("/search/hybrid")
+async def hybrid_search(search_request: HybridSearchRequest):
+    """
+    Advanced hybrid similarity search combining cosine and dot product scoring.
+    Provides better relevance ranking than traditional cosine-only search.
+    """
+    try:
+        if "rag_pipeline" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        # Access the hybrid search engine from the RAG pipeline
+        hybrid_engine = components["rag_pipeline"].hybrid_search
+
+        # Update engine parameters if provided
+        if search_request.candidate_pool != hybrid_engine.candidate_pool:
+            hybrid_engine.candidate_pool = search_request.candidate_pool
+        if search_request.cosine_weight != hybrid_engine.cosine_weight:
+            hybrid_engine.cosine_weight = search_request.cosine_weight
+
+        # Perform hybrid search
+        search_results, query_embedding = hybrid_engine.search(
+            query=search_request.query,
+            top_k=search_request.top_k,
+            similarity_threshold=search_request.similarity_threshold,
+            include_metadata=True
+        )
+
+        # Format results for API response
+        formatted_results = []
+        for result in search_results:
+            formatted_results.append({
+                "document_id": result.document_id,
+                "filename": result.filename,
+                "chunk_text": result.chunk_text,
+                "chunk_index": result.chunk_index,
+                "cosine_similarity": round(result.similarity_cosine, 4),
+                "dot_product": round(result.similarity_dot, 4),
+                "hybrid_score": round(result.rerank_score, 4),
+                "preview": result.short_snippet(140)
+            })
+
+        return {
+            "results": formatted_results,
+            "total_results": len(formatted_results),
+            "query": search_request.query,
+            "search_params": {
+                "top_k": search_request.top_k,
+                "similarity_threshold": search_request.similarity_threshold,
+                "candidate_pool": search_request.candidate_pool,
+                "cosine_weight": search_request.cosine_weight
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Hybrid search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/global-search", response_model=GlobalSearchResponse)

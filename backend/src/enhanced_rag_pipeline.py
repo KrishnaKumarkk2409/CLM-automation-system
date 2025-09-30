@@ -201,7 +201,7 @@ Instructions:
             return enhanced_response
 
         except Exception as e:
-            logger.error(f"Enhanced RAG query failed: {e}")
+            logger.exception("Enhanced RAG query failed")
             return self._create_error_response(str(e))
 
     def _hybrid_search_retrieval(self, question: str, limit: int) -> List[SearchResult]:
@@ -239,6 +239,7 @@ Instructions:
         converted_results = []
 
         for result in search_results:
+            metadata = result.metadata if isinstance(result.metadata, dict) else {}
             converted_result = {
                 'document_id': result.document_id,
                 'chunk_text': result.chunk_text,
@@ -247,7 +248,7 @@ Instructions:
                     'dense_score': result.dense_score,
                     'sparse_score': result.sparse_score,
                     'chunk_index': result.chunk_index,
-                    **result.metadata
+                    **metadata
                 }
             }
             converted_results.append(converted_result)
@@ -301,14 +302,20 @@ Instructions:
             # Get document information
             document = self.db_manager.get_document_by_id(result.document_id)
             if document:
+                chunk_metadata = result.chunk_metadata if isinstance(result.chunk_metadata, dict) else {}
+                section_title = chunk_metadata.get('section_title') or 'General'
+                chunk_type = chunk_metadata.get('chunk_type')
+                chunk_text = result.chunk_text or ""
+                features = result.features
+
                 # Enhanced context formatting with metadata
                 confidence_indicator = "🔥" if result.reranked_score > 0.8 else "✓" if result.reranked_score > 0.6 else "~"
 
                 context_part = f"""
 [Source {i+1} {confidence_indicator} Relevance: {result.reranked_score:.1%}]
 Document: {document['filename']}
-Section: {result.chunk_metadata.get('section_title', 'General')}
-Content: {result.chunk_text}
+Section: {section_title}
+Content: {chunk_text}
 ---
 """
                 context_parts.append(context_part)
@@ -320,15 +327,15 @@ Content: {result.chunk_text}
                     "document_id": result.document_id,
                     "relevance_score": round(result.reranked_score, 3),
                     "original_score": round(result.original_score, 3),
-                    "chunk_text": result.chunk_text[:200] + "..." if len(result.chunk_text) > 200 else result.chunk_text,
-                    "section_title": result.chunk_metadata.get('section_title'),
-                    "chunk_type": result.chunk_metadata.get('chunk_type'),
+                    "chunk_text": (chunk_text[:200] + "...") if len(chunk_text) > 200 else chunk_text,
+                    "section_title": chunk_metadata.get('section_title'),
+                    "chunk_type": chunk_type,
                     "features": {
-                        "semantic_similarity": round(result.features.semantic_similarity, 3),
-                        "keyword_match": round(result.features.keyword_match_score, 3),
-                        "legal_term_relevance": round(result.features.legal_term_relevance, 3),
-                        "temporal_relevance": round(result.features.temporal_relevance, 3),
-                        "entity_match": round(result.features.entity_match_score, 3)
+                        "semantic_similarity": round(features.semantic_similarity, 3),
+                        "keyword_match": round(features.keyword_match_score, 3),
+                        "legal_term_relevance": round(features.legal_term_relevance, 3),
+                        "temporal_relevance": round(features.temporal_relevance, 3),
+                        "entity_match": round(features.entity_match_score, 3)
                     },
                     "ranking_explanation": result.ranking_explanation
                 }
@@ -337,10 +344,10 @@ Content: {result.chunk_text}
                 # Metadata analysis
                 total_confidence += result.reranked_score
 
-                chunk_type = result.chunk_metadata.get('chunk_type', 'unknown')
-                relevance_distribution[chunk_type] = relevance_distribution.get(chunk_type, 0) + 1
+                distribution_key = chunk_type or 'unknown'
+                relevance_distribution[distribution_key] = relevance_distribution.get(distribution_key, 0) + 1
 
-                if result.features.temporal_relevance > 0.7:
+                if features.temporal_relevance > 0.7:
                     temporal_relevance_count += 1
 
         context = "\n".join(context_parts)

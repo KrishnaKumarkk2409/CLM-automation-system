@@ -16,15 +16,24 @@ from collections import deque
 from src.config import Config
 from src.database import DatabaseManager
 from src.embeddings import EmbeddingManager
+from src.similarity_search import HybridSimilarityEngine
 
 logger = logging.getLogger(__name__)
 
 class RAGPipeline:
     """RAG pipeline for contract document retrieval and question answering"""
-    
+
     def __init__(self, db_manager: DatabaseManager, embedding_manager: EmbeddingManager):
         self.db_manager = db_manager
         self.embedding_manager = embedding_manager
+
+        # Initialize hybrid similarity engine
+        self.hybrid_search = HybridSimilarityEngine(
+            db_manager=db_manager,
+            embedding_manager=embedding_manager,
+            candidate_pool=50,
+            cosine_weight=0.7
+        )
         
         # Initialize simple conversation memory
         self.chat_history = deque(maxlen=10)  # Remember last 10 messages
@@ -66,70 +75,83 @@ Instructions:
         
         logger.info("RAG pipeline initialized with GPT-4")
     
-    def query(self, question: str, max_results: int = 5) -> Dict[str, Any]:
+    def query(self, question: str, max_results: int = 5, use_hybrid: bool = True) -> Dict[str, Any]:
         """
         Process a query using RAG pipeline
-        
+
         Args:
             question: User's question about contracts
             max_results: Maximum number of document chunks to retrieve
-            
+            use_hybrid: Whether to use hybrid similarity search (default: True)
+
         Returns:
             Dictionary containing answer, sources, and metadata
         """
         try:
             logger.info(f"Processing RAG query: {question[:100]}...")
-            
-            # Step 1: Generate query embedding
-            query_embedding = self.embedding_manager.generate_query_embedding(question)
-            if not query_embedding:
-                return {
-                    "answer": "I'm sorry, I couldn't process your question at this time.",
-                    "sources": [],
-                    "error": "Failed to generate query embedding"
-                }
-            
-            # Step 2: Enhanced query processing for better relevance
-            processed_query = self._enhance_query(question)
-            
-            # Generate embedding for the enhanced query
-            enhanced_embedding = self.embedding_manager.generate_query_embedding(processed_query)
-            if enhanced_embedding:
-                query_embedding = enhanced_embedding
-            
-            # Step 2: Retrieve relevant document chunks with adaptive threshold
+
+            # Step 1: Determine similarity threshold
             similarity_threshold = self._determine_similarity_threshold(question)
-            relevant_chunks = self.db_manager.similarity_search(
-                query_embedding=query_embedding,
-                threshold=similarity_threshold,
-                limit=max_results * 2  # Get more initially for filtering
-            )
-            
-            # Step 3: Re-rank and filter chunks for relevance
-            relevant_chunks = self._rerank_chunks(relevant_chunks, question, max_results)
-            
+
+            # Step 2: Retrieve relevant chunks using hybrid search
+            if use_hybrid:
+                search_results, query_embedding = self.hybrid_search.search(
+                    query=question,
+                    top_k=max_results,
+                    similarity_threshold=similarity_threshold,
+                    include_metadata=True
+                )
+
+                # Convert SearchResult objects to dict format for compatibility
+                relevant_chunks = []
+                for result in search_results:
+                    relevant_chunks.append({
+                        "document_id": result.document_id,
+                        "chunk_text": result.chunk_text,
+                        "chunk_index": result.chunk_index,
+                        "similarity": result.rerank_score,  # Use hybrid rerank score
+                        "cosine_similarity": result.similarity_cosine,
+                        "dot_similarity": result.similarity_dot,
+                    })
+            else:
+                # Fall back to traditional search
+                query_embedding = self.embedding_manager.generate_query_embedding(question)
+                if not query_embedding:
+                    return {
+                        "answer": "I'm sorry, I couldn't process your question at this time.",
+                        "sources": [],
+                        "error": "Failed to generate query embedding"
+                    }
+
+                relevant_chunks = self.db_manager.similarity_search(
+                    query_embedding=query_embedding,
+                    threshold=similarity_threshold,
+                    limit=max_results * 2
+                )
+                relevant_chunks = self._rerank_chunks(relevant_chunks, question, max_results)
+
             if not relevant_chunks:
                 return {
                     "answer": "I don't have any relevant information to answer this question based on the available contract documents.",
                     "sources": [],
                     "retrieved_chunks": 0
                 }
-            
-            # Step 4: Prepare context and generate answer
+
+            # Step 3: Prepare context and generate answer
             context, sources = self._prepare_context_and_sources(relevant_chunks)
-            
-            # Step 5: Generate response using LLM
+
+            # Step 4: Generate response using LLM
             response = self._generate_response(question, context)
-            
+
             logger.info(f"RAG query completed successfully with {len(relevant_chunks)} chunks retrieved")
-            
+
             return {
                 "answer": response,
                 "sources": sources,
                 "retrieved_chunks": len(relevant_chunks),
                 "similarity_scores": [chunk.get("similarity", 0) for chunk in relevant_chunks]
             }
-            
+
         except Exception as e:
             logger.error(f"RAG query failed: {e}")
             return {
@@ -195,46 +217,55 @@ Instructions:
         """Clear conversation memory"""
         self.chat_history.clear()
     
-    def semantic_search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def semantic_search(self, query: str, limit: int = 10, use_hybrid: bool = True) -> List[Dict[str, Any]]:
         """
         Perform semantic search without LLM generation
-        
+
         Args:
             query: Search query
             limit: Maximum number of results
-            
+            use_hybrid: Whether to use hybrid similarity search (default: True)
+
         Returns:
             List of relevant document chunks with metadata
         """
         try:
-            # Generate query embedding
-            query_embedding = self.embedding_manager.generate_query_embedding(query)
-            if not query_embedding:
-                return []
-            
-            # Retrieve similar chunks
-            chunks = self.db_manager.similarity_search(
-                query_embedding=query_embedding,
-                threshold=Config.SIMILARITY_THRESHOLD,
-                limit=limit
-            )
-            
-            # Enrich with document information
-            enriched_results = []
-            for chunk in chunks:
-                document = self.db_manager.get_document_by_id(chunk["document_id"])
-                if document:
-                    enriched_results.append({
-                        "chunk_text": chunk["chunk_text"],
-                        "similarity": chunk.get("similarity", 0),
-                        "document_id": chunk["document_id"],
-                        "filename": document["filename"],
-                        "file_type": document["file_type"],
-                        "document_metadata": document.get("metadata", {})
-                    })
-            
-            return enriched_results
-            
+            if use_hybrid:
+                # Use hybrid similarity search engine
+                return self.hybrid_search.semantic_search(
+                    query=query,
+                    limit=limit,
+                    threshold=Config.SIMILARITY_THRESHOLD
+                )
+            else:
+                # Use traditional cosine-only search
+                query_embedding = self.embedding_manager.generate_query_embedding(query)
+                if not query_embedding:
+                    return []
+
+                # Retrieve similar chunks
+                chunks = self.db_manager.similarity_search(
+                    query_embedding=query_embedding,
+                    threshold=Config.SIMILARITY_THRESHOLD,
+                    limit=limit
+                )
+
+                # Enrich with document information
+                enriched_results = []
+                for chunk in chunks:
+                    document = self.db_manager.get_document_by_id(chunk["document_id"])
+                    if document:
+                        enriched_results.append({
+                            "chunk_text": chunk["chunk_text"],
+                            "similarity": chunk.get("similarity", 0),
+                            "document_id": chunk["document_id"],
+                            "filename": document["filename"],
+                            "file_type": document["file_type"],
+                            "document_metadata": document.get("metadata", {})
+                        })
+
+                return enriched_results
+
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             return []

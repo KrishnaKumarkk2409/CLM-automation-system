@@ -419,14 +419,17 @@ class HybridSearchEngine:
                 # Get chunk data
                 chunk_data = self._get_chunk_data(chunk_id)
                 if chunk_data:
+                    chunk_text = chunk_data.get('chunk_text') or ''
+                    sanitized_metadata = chunk_data.get('metadata') or {}
+
                     result = SearchResult(
                         document_id=chunk_data['document_id'],
-                        chunk_text=chunk_data['chunk_text'],
+                        chunk_text=chunk_text,
                         dense_score=dense_score,
                         sparse_score=sparse_score,
                         hybrid_score=hybrid_score,
                         chunk_index=chunk_data.get('chunk_index', 0),
-                        metadata=chunk_data.get('metadata', {})
+                        metadata=sanitized_metadata
                     )
                     combined_results.append(result)
 

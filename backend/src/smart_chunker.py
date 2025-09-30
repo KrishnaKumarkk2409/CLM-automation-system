@@ -8,8 +8,19 @@ import re
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
-import spacy
-from sentence_transformers import SentenceTransformer
+try:
+    import spacy
+    _SPACY_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    spacy = None
+    _SPACY_AVAILABLE = False
+
+try:
+    from sentence_transformers import SentenceTransformer
+    _SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    SentenceTransformer = None
+    _SENTENCE_TRANSFORMERS_AVAILABLE = False
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -173,6 +184,13 @@ class SemanticChunker:
     """Semantic chunking using sentence similarity"""
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        if not _SENTENCE_TRANSFORMERS_AVAILABLE:
+            logger.warning(
+                "sentence-transformers not installed; falling back to simple chunking"
+            )
+            self.sentence_model = None
+            return
+
         try:
             self.sentence_model = SentenceTransformer(model_name)
             logger.info(f"Semantic chunker initialized with model: {model_name}")

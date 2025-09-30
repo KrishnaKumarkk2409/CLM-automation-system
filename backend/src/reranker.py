@@ -412,8 +412,8 @@ class AdvancedReranker:
         score = 0.5  # Base score
 
         # Document type relevance
-        metadata = result.get('metadata', {})
-        chunk_type = metadata.get('chunk_type', '')
+        metadata = result.get('metadata', {}) or {}
+        chunk_type = metadata.get('chunk_type') or ''
 
         type_scores = {
             'section': 0.8,
@@ -426,7 +426,9 @@ class AdvancedReranker:
         score += type_scores.get(chunk_type, 0.0) * 0.3
 
         # Importance score from chunk metadata
-        importance = metadata.get('importance_score', 0.5)
+        importance = metadata.get('importance_score')
+        if not isinstance(importance, (int, float)):
+            importance = 0.5
         score += importance * 0.4
 
         # Document freshness (if available)
@@ -444,13 +446,15 @@ class AdvancedReranker:
 
     def _calculate_structural_importance(self, result: Dict[str, Any]) -> float:
         """Calculate importance based on document structure"""
-        metadata = result.get('metadata', {})
+        metadata = result.get('metadata', {}) or {}
 
         # Base importance from metadata
-        base_importance = metadata.get('importance_score', 0.5)
+        base_importance = metadata.get('importance_score')
+        if not isinstance(base_importance, (int, float)):
+            base_importance = 0.5
 
         # Section title bonus
-        section_title = result.get('section_title', '')
+        section_title = result.get('section_title', '') or metadata.get('section_title', '') or ''
         title_bonus = 0.0
 
         if section_title:

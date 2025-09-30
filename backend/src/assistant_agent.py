@@ -21,11 +21,14 @@ class AssistantAgent:
         "hello",
         "hey",
         "hola",
+        "hoi",
         "howdy",
         "greetings",
         "good morning",
         "good afternoon",
         "good evening",
+        "hlo",
+        "hoi",
     }
 
     HELP_KEYWORDS = {
@@ -55,6 +58,48 @@ class AssistantAgent:
         "I'm ready whenever you want to dig into your contracts.",
         "Just let me know if I should summarise a document or check a renewal window.",
     ]
+
+    SMALLTALK_KEYWORDS = {
+        "ok",
+        "okay",
+        "cool",
+        "thanks",
+        "thank",
+        "sure",
+        "awesome",
+        "great",
+        "nice",
+        "yup",
+        "yeah",
+        "haha",
+        "lol",
+        "alright",
+        "hm",
+        "hmm",
+        "hlo",
+        "hey",
+        "hi",
+        "hello",
+    }
+
+    RETRIEVAL_KEYWORDS = {
+        "find",
+        "search",
+        "show",
+        "locate",
+        "lookup",
+        "list",
+        "tell",
+        "about",
+        "give",
+        "show me",
+        "what",
+        "who",
+        "where",
+        "document",
+        "contract",
+        "clause",
+    }
 
     UUID_PATTERN = re.compile(
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
@@ -253,6 +298,9 @@ class AssistantAgent:
         if self._looks_like_smalltalk(lower):
             return {"intent": "smalltalk"}
 
+        if self._looks_like_retrieval(lower):
+            return {"intent": "document_query"}
+
         return {"intent": "document_query"}
 
     def _detect_similarity_request(self, text: str) -> Optional[Dict[str, any]]:
@@ -294,18 +342,30 @@ class AssistantAgent:
         for token in tokens:
             if token in self.GREETING_KEYWORDS:
                 return True
+            if len(token) < 3:
+                continue
             for keyword in self.GREETING_KEYWORDS:
-                if SequenceMatcher(None, token, keyword).ratio() >= 0.72:
+                if len(keyword) < 3:
+                    continue
+                if SequenceMatcher(None, token, keyword).ratio() >= 0.85:
                     return True
         return False
 
     def _looks_like_smalltalk(self, text: str) -> bool:
         tokens = self._tokenize(text)
-        if not tokens:
+        if not tokens or len(tokens) > 3:
             return False
-        if len(tokens) <= 3 and not any(keyword in text for keyword in {"contract", "document", "agreement"}):
+
+        if all(token in self.SMALLTALK_KEYWORDS for token in tokens):
             return True
+
+        if len(tokens) <= 2 and not self._looks_like_retrieval(text):
+            return True
+
         return False
+
+    def _looks_like_retrieval(self, text: str) -> bool:
+        return any(keyword in text for keyword in self.RETRIEVAL_KEYWORDS)
 
     def _tokenize(self, text: str) -> List[str]:
         return [token for token in re.split(r"[^a-z0-9]+", text.lower()) if token]
@@ -365,4 +425,3 @@ class AssistantAgent:
             }
             for idx, match in enumerate(matches, start=1)
         ]
-

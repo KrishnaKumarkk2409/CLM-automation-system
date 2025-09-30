@@ -145,6 +145,59 @@ export function useSearchDocuments() {
   })
 }
 
+// Hybrid Search Types and Hook
+export interface HybridSearchParams {
+  query: string
+  top_k?: number
+  similarity_threshold?: number
+  candidate_pool?: number
+  cosine_weight?: number
+}
+
+export interface HybridSearchResult {
+  document_id: string
+  filename: string
+  chunk_text: string
+  chunk_index: number
+  cosine_similarity: number
+  dot_product: number
+  hybrid_score: number
+  preview: string
+}
+
+export interface HybridSearchResponse {
+  results: HybridSearchResult[]
+  total_results: number
+  query: string
+  search_params: {
+    top_k: number
+    similarity_threshold: number
+    candidate_pool: number
+    cosine_weight: number
+  }
+}
+
+export function useHybridSearch() {
+  return useMutation({
+    mutationFn: async ({
+      query,
+      top_k = 5,
+      similarity_threshold = 0.6,
+      candidate_pool = 50,
+      cosine_weight = 0.7
+    }: HybridSearchParams): Promise<HybridSearchResponse> => {
+      const response = await api.post('/search/hybrid', {
+        query,
+        top_k,
+        similarity_threshold,
+        candidate_pool,
+        cosine_weight
+      })
+      return response.data
+    },
+  })
+}
+
 export interface GlobalSearchParams {
   query: string
   limit?: number
