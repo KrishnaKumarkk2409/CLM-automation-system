@@ -25,16 +25,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from src.config import Config
 from src.database import DatabaseManager
 from src.embeddings import EmbeddingManager
-from src.rag_pipeline import RAGPipeline
+from backend.src.assistant_agent import AssistantAgent
+from backend.src.enhanced_rag_pipeline import EnhancedRAGPipeline
 from src.contract_agent import ContractAgent
 from src.document_processor import DocumentProcessor
+from src.enhanced_document_processor import EnhancedDocumentProcessor
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('./logs/api.log'),
+        logging.FileHandler('/Users/krishnakumar/Code/CLM automation system/backend/logs/api.log'),
         logging.StreamHandler()
     ]
 )
@@ -168,16 +170,24 @@ async def startup_event():
         # Initialize components
         db_manager = DatabaseManager()
         embedding_manager = EmbeddingManager(db_manager)
-        rag_pipeline = RAGPipeline(db_manager, embedding_manager)
+        rag_pipeline = EnhancedRAGPipeline(db_manager, embedding_manager)
         contract_agent = ContractAgent(db_manager)
         document_processor = DocumentProcessor(db_manager)
-        
+        enhanced_document_processor = EnhancedDocumentProcessor(db_manager)
+        assistant_agent = AssistantAgent(
+            rag_pipeline=rag_pipeline,
+            contract_agent=contract_agent,
+            db_manager=db_manager
+        )
+
         components = {
             "db_manager": db_manager,
             "embedding_manager": embedding_manager,
             "rag_pipeline": rag_pipeline,
             "contract_agent": contract_agent,
-            "document_processor": document_processor
+            "document_processor": document_processor,
+            "enhanced_document_processor": enhanced_document_processor,
+            "assistant_agent": assistant_agent
         }
         
         logger.info("CLM components initialized successfully")
@@ -311,41 +321,23 @@ async def chat_endpoint(chat_request: ChatMessage, request: Request):
         except Exception as e:
             logger.debug(f"Chat persistence setup skipped: {e}")
         
-        # Enhanced AI agent with RAG pipeline as tool
-        query_type = classify_query(chat_request.message)
-        
-        if query_type == "greeting":
-            response_data = handle_greeting()
-        elif query_type == "help":
-            response_data = handle_help_request()
-        elif query_type == "agent_task":
-            # Use contract agent for administrative/monitoring tasks
-            try:
-                agent_response = components["contract_agent"].query_agent(chat_request.message)
-                response_data = {
-                    "answer": f"🤖 **Contract Agent**: {agent_response}",
-                    "sources": []
-                }
-            except Exception as e:
-                logger.error(f"Agent query failed: {e}")
-                response_data = {
-                    "answer": "I apologize, but I encountered an issue processing your administrative request. Please try rephrasing your question.",
-                    "sources": []
-                }
-        else:
-            # Use RAG pipeline for document-focused queries
-            try:
-                response_data = components["rag_pipeline"].query(chat_request.message)
-                # Add AI agent context to the response
-                if response_data.get("sources"):
-                    response_data["answer"] = f"📚 **Document Search Results**: {response_data['answer']}"
-            except Exception as e:
-                logger.error(f"RAG query failed: {e}")
-                response_data = {
-                    "answer": "I'm having trouble searching the documents right now. Please try again or rephrase your question.",
-                    "sources": []
-                }
-        
+        # Use assistant agent to determine whether RAG search is needed
+        if "assistant_agent" not in components:
+            raise HTTPException(status_code=503, detail="Assistant agent not initialized")
+
+        try:
+            response_data = components["assistant_agent"].handle_message(
+                chat_request.message,
+                conversation_id=conversation_id,
+                user_id=user_id
+            )
+        except Exception as e:
+            logger.error(f"Assistant agent failed: {e}")
+            response_data = {
+                "answer": "I encountered an issue while processing your request. Please try again shortly.",
+                "sources": []
+            }
+
         # Broadcast to WebSocket connections if any
         if conversation_id in manager.conversation_sessions:
             await manager.broadcast_to_conversation(
@@ -420,7 +412,10 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             # Process the message
             if message_data.get("type") == "chat":
                 # Process chat message
-                response_data = components["rag_pipeline"].query(message_data["message"])
+                agent = components.get("assistant_agent")
+                if not agent:
+                    raise RuntimeError("Assistant agent not initialized")
+                response_data = agent.handle_message(message_data["message"], conversation_id)
                 
                 # Send response back
                 await manager.send_personal_message(
@@ -439,7 +434,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
 
 @app.post("/upload")
 async def upload_documents(files: List[UploadFile] = File(...)):
-    """Upload and process documents"""
+    """Upload and process documents (standard processing)"""
     try:
         if "document_processor" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
@@ -488,22 +483,204 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/upload-enhanced")
+async def upload_documents_enhanced(
+    files: List[UploadFile] = File(...),
+    use_vision: bool = True,
+    custom_chunk_size: Optional[int] = None
+):
+    """Enhanced upload with Vision API and large document support"""
+    try:
+        if "enhanced_document_processor" not in components:
+            raise HTTPException(status_code=503, detail="Enhanced processor not initialized")
+        
+        enhanced_processor = components["enhanced_document_processor"]
+        results = []
+        
+        for file in files:
+            logger.info(f"Starting enhanced processing of {file.filename}")
+            
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp_file:
+                content = await file.read()
+                tmp_file.write(content)
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # Process with enhanced processor
+                result = await enhanced_processor.process_document_async(
+                    file_path=tmp_file_path,
+                    filename=file.filename,
+                    extract_contracts=True,
+                    custom_chunk_size=custom_chunk_size,
+                    metadata={
+                        "source": "frontend_upload_enhanced", 
+                        "uploaded_via": "web_interface_enhanced",
+                        "vision_enabled": use_vision,
+                        "file_size": len(content)
+                    },
+                    use_vision=use_vision
+                )
+                
+                results.append({
+                    "filename": file.filename,
+                    "success": result.get("success", False),
+                    "document_id": result.get("document_id"),
+                    "chunks_created": result.get("chunks_created", 0),
+                    "contract_extracted": result.get("contract_extracted", False),
+                    "visual_content_found": result.get("visual_content_found", False),
+                    "visual_elements": result.get("visual_elements", 0),
+                    "embedding_success": result.get("embedding_success", False),
+                    "processing_method": "enhanced_with_vision" if use_vision else "enhanced_no_vision"
+                })
+                
+                logger.info(f"Enhanced processing completed for {file.filename}: "
+                          f"Success: {result.get('success')}, "
+                          f"Chunks: {result.get('chunks_created', 0)}, "
+                          f"Visual elements: {result.get('visual_elements', 0)}")
+                
+            except Exception as e:
+                logger.error(f"Enhanced processing failed for {file.filename}: {e}")
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": str(e),
+                    "processing_method": "enhanced_failed"
+                })
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(tmp_file_path)
+                except:
+                    pass
+        
+        return {
+            "results": results,
+            "processing_type": "enhanced",
+            "vision_enabled": use_vision,
+            "total_files": len(files),
+            "successful_files": len([r for r in results if r.get("success")])
+        }
+        
+    except Exception as e:
+        logger.error(f"Enhanced upload error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/processing-status/{progress_id}")
+async def get_processing_status(progress_id: str):
+    """Get the processing status for a document"""
+    try:
+        if "enhanced_document_processor" not in components:
+            raise HTTPException(status_code=503, detail="Enhanced processor not initialized")
+        
+        enhanced_processor = components["enhanced_document_processor"]
+        
+        if progress_id in enhanced_processor.current_progress:
+            return enhanced_processor.current_progress[progress_id]
+        else:
+            raise HTTPException(status_code=404, detail="Progress ID not found")
+    
+    except Exception as e:
+        logger.error(f"Error getting processing status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/supported-file-types")
+async def get_supported_file_types():
+    """Get list of supported file types for enhanced processing"""
+    return {
+        "standard_types": ["pdf", "docx", "txt"],
+        "enhanced_types": ["pdf", "docx", "txt", "png", "jpg", "jpeg", "gif", "bmp", "tiff"],
+        "vision_supported": ["pdf", "png", "jpg", "jpeg", "gif", "bmp", "tiff"],
+        "large_document_support": ["pdf"],
+        "features": {
+            "vision_api": "Extract text and analyze images using OpenAI Vision API",
+            "large_pdf_batching": "Process large PDFs in batches to avoid memory issues",
+            "progress_tracking": "Real-time progress updates for long operations",
+            "enhanced_chunking": "Smart chunking with visual content integration",
+            "signature_detection": "Detect signatures and seals in visual content"
+        }
+    }
+
 @app.post("/search")
 async def search_documents(search_request: DocumentSearchRequest):
-    """Search for similar documents"""
+    """Search for similar documents using traditional cosine similarity"""
     try:
         if "rag_pipeline" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
-        
+
         similar_docs = components["rag_pipeline"].find_similar_contracts(
             search_request.query,
             limit=search_request.limit
         )
-        
+
         return {"documents": similar_docs}
-        
+
     except Exception as e:
         logger.error(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class HybridSearchRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    similarity_threshold: float = 0.6
+    candidate_pool: int = 50
+    cosine_weight: float = 0.7
+
+@app.post("/search/hybrid")
+async def hybrid_search(search_request: HybridSearchRequest):
+    """
+    Advanced hybrid similarity search combining cosine and dot product scoring.
+    Provides better relevance ranking than traditional cosine-only search.
+    """
+    try:
+        if "rag_pipeline" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        # Access the NEW hybrid similarity engine from the EnhancedRAG pipeline
+        hybrid_engine = components["rag_pipeline"].hybrid_similarity
+
+        # Update engine parameters if provided
+        if search_request.candidate_pool != hybrid_engine.candidate_pool:
+            hybrid_engine.candidate_pool = search_request.candidate_pool
+        if search_request.cosine_weight != hybrid_engine.cosine_weight:
+            hybrid_engine.cosine_weight = search_request.cosine_weight
+
+        # Perform hybrid search
+        search_results, query_embedding = hybrid_engine.search(
+            query=search_request.query,
+            top_k=search_request.top_k,
+            similarity_threshold=search_request.similarity_threshold,
+            include_metadata=True
+        )
+
+        # Format results for API response
+        formatted_results = []
+        for result in search_results:
+            formatted_results.append({
+                "document_id": result.document_id,
+                "filename": result.filename,
+                "chunk_text": result.chunk_text,
+                "chunk_index": result.chunk_index,
+                "cosine_similarity": round(result.similarity_cosine, 4),
+                "dot_product": round(result.similarity_dot, 4),
+                "hybrid_score": round(result.rerank_score, 4),
+                "preview": result.short_snippet(140)
+            })
+
+        return {
+            "results": formatted_results,
+            "total_results": len(formatted_results),
+            "query": search_request.query,
+            "search_params": {
+                "top_k": search_request.top_k,
+                "similarity_threshold": search_request.similarity_threshold,
+                "candidate_pool": search_request.candidate_pool,
+                "cosine_weight": search_request.cosine_weight
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Hybrid search error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/global-search", response_model=GlobalSearchResponse)
@@ -602,6 +779,69 @@ async def global_search(search_request: GlobalSearchRequest):
     except Exception as e:
         logger.error(f"Global search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/{document_a}/compare/{document_b}")
+async def compare_documents(document_a: str, document_b: str,
+                            aggregation: str = "mean", top_k: int = 3):
+    """Return similarity details between two documents"""
+    try:
+        if "rag_pipeline" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        top_k = max(1, min(top_k, 5))
+        result = components["rag_pipeline"].document_similarity(
+            document_a=document_a,
+            document_b=document_b,
+            aggregation=aggregation,
+            top_k=top_k
+        )
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Similarity data not available for provided documents")
+
+        return result
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Document comparison failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to compute document similarity")
+
+
+@app.get("/documents/{document_id}/similar")
+async def similar_documents(document_id: str, limit: int = 5,
+                            aggregation: str = "mean", top_k: int = 3):
+    """Return documents similar to the reference document"""
+    try:
+        if "rag_pipeline" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        limit = max(1, min(limit, 10))
+        top_k = max(1, min(top_k, 5))
+
+        results = components["rag_pipeline"].compare_document_to_corpus(
+            reference_document_id=document_id,
+            limit=limit,
+            aggregation=aggregation,
+            top_k=top_k
+        )
+
+        return {
+            "document_id": document_id,
+            "aggregation": aggregation,
+            "similar_documents": results
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Similar documents lookup failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch similar documents")
 
 @app.post("/generate-report")
 async def generate_report(report_request: ReportRequest):
@@ -1278,93 +1518,6 @@ async def api_upload_documents(
     except Exception as e:
         logger.error(f"API upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# Helper functions
-def classify_query(prompt: str) -> str:
-    """Classify the type of user query"""
-    prompt_lower = prompt.lower().strip()
-    
-    greeting_patterns = [
-        'hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon'
-    ]
-    
-    help_patterns = [
-        'help', 'how do i', 'how to', 'what can you do'
-    ]
-    
-    agent_patterns = [
-        'expiring', 'expire', 'conflict', 'summary', 'monitor', 'report'
-    ]
-    
-    if any(pattern in prompt_lower for pattern in greeting_patterns):
-        return "greeting"
-    elif any(pattern in prompt_lower for pattern in help_patterns):
-        return "help"
-    elif any(pattern in prompt_lower for pattern in agent_patterns):
-        return "agent_task"
-    else:
-        return "document_query"
-
-def handle_greeting() -> Dict[str, Any]:
-    """Handle greeting messages"""
-    greeting_response = """
-    Hello! 👋 Welcome to the Contract Lifecycle Management System. 
-    
-    I'm here to help you with your contract-related questions. You can ask me about:
-    • Contract expiration dates and renewals
-    • Contract analysis and key terms
-    • Document search and similarity
-    • Compliance and risk assessment
-    • Contract analytics and reporting
-    
-    What would you like to know about your contracts today?
-    """
-    
-    return {
-        "answer": greeting_response,
-        "sources": []
-    }
-
-def handle_help_request() -> Dict[str, Any]:
-    """Handle help requests"""
-    help_response = """
-    🎯 **I'm your Contract Lifecycle Management Assistant!**
-    
-    **My capabilities include:**
-    
-    📋 **Contract Analysis**
-    • Analyze contract content and terms
-    • Extract key information from documents
-    • Compare contracts and identify similarities
-    
-    📅 **Contract Monitoring**
-    • Track contract expiration dates
-    • Monitor upcoming renewals
-    • Generate daily reports on contract status
-    
-    ⚠️ **Risk Management**
-    • Identify potential contract conflicts
-    • Flag important clauses and terms
-    • Highlight compliance issues
-    
-    📊 **Analytics & Insights**
-    • Generate contract summaries
-    • Visualize contract timelines
-    • Show department-wise contract distribution
-    
-    **How to get started:**
-    1. Ask me questions about your contracts
-    2. Upload new documents for analysis
-    3. Request reports and analytics
-    4. Search for specific contract information
-    
-    Try asking me something like: "Show me contracts expiring this month" or "What are the key terms in the TechCorp agreement?"
-    """
-    
-    return {
-        "answer": help_response,
-        "sources": []
-    }
 
 if __name__ == "__main__":
     import uvicorn

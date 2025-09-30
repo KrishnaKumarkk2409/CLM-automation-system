@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeKatex from 'rehype-katex'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
+import {
   PaperAirplaneIcon,
   UserIcon,
   SparklesIcon,
@@ -16,7 +16,9 @@ import {
   XMarkIcon,
   EyeIcon,
   PaperClipIcon,
-  Bars3BottomLeftIcon
+  Bars3BottomLeftIcon,
+  ChevronDownIcon,
+  ChevronRightIcon
 } from '@heroicons/react/24/outline'
 import { useSendMessage, ChatMessage, useUploadDocuments, useSearchDocuments, useChatHistory, useChatHistoryPaginated, ChatHistoryResponse } from '@/hooks/use-api'
 import toast from 'react-hot-toast'
@@ -50,6 +52,7 @@ export default function ChatInterface() {
   const loadMoreHistory = useChatHistoryPaginated()
   const [allHistoryMessages, setAllHistoryMessages] = useState<ChatHistoryResponse['messages']>([])
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
+  const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set())
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -240,6 +243,19 @@ export default function ChatInterface() {
     }
   }
 
+  // Toggle source expansion
+  const toggleSourceExpansion = (messageIndex: number) => {
+    setExpandedSources(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(messageIndex)) {
+        newSet.delete(messageIndex)
+      } else {
+        newSet.add(messageIndex)
+      }
+      return newSet
+    })
+  }
+
   return (
     <div className="h-full bg-white">
       <div className="flex h-full">
@@ -333,41 +349,60 @@ export default function ChatInterface() {
 
                 {message.sources && message.sources.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-200">
-                    <p className="text-xs text-gray-600 font-medium mb-2">
-                      📚 Sources ({message.sources.length}):
-                    </p>
-                    <div className="space-y-2">
-                      {message.sources.slice(0, 3).map((source, idx) => (
-                        <div key={idx} className="text-xs bg-gray-50 p-2 border border-gray-200">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="font-medium text-black truncate flex-1">
-                              {source.filename}
+                    <button
+                      onClick={() => toggleSourceExpansion(index)}
+                      className="flex items-center space-x-1 text-xs text-gray-600 font-medium mb-2 hover:text-gray-800 transition-colors"
+                    >
+                      {expandedSources.has(index) ? (
+                        <ChevronDownIcon className="h-3 w-3" />
+                      ) : (
+                        <ChevronRightIcon className="h-3 w-3" />
+                      )}
+                      <span>📚 Sources ({message.sources.length})</span>
+                    </button>
+
+                    <AnimatePresence>
+                      {expandedSources.has(index) && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="space-y-2 overflow-hidden"
+                        >
+                          {message.sources.slice(0, 3).map((source, idx) => (
+                            <div key={idx} className="text-xs bg-gray-50 p-2 border border-gray-200">
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="font-medium text-black truncate flex-1">
+                                  {source.filename}
+                                </div>
+                                {source.document_id && (
+                                  <button
+                                    onClick={() => setPreviewDocument({
+                                      id: source.document_id,
+                                      filename: source.filename
+                                    })}
+                                    className="ml-2 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-black border border-gray-300 transition-colors flex items-center space-x-1"
+                                    title="Preview document"
+                                  >
+                                    <EyeIcon className="h-3 w-3" />
+                                    <span>View</span>
+                                  </button>
+                                )}
+                              </div>
+                              <div className="text-gray-600 leading-relaxed">
+                                {source.chunk_text?.substring(0, 120)}...
+                              </div>
+                              {source.similarity && (
+                                <div className="mt-1 text-xs text-gray-400">
+                                  Relevance: {Math.round(source.similarity * 100)}%
+                                </div>
+                              )}
                             </div>
-                            {source.document_id && (
-                              <button
-                                onClick={() => setPreviewDocument({
-                                  id: source.document_id,
-                                  filename: source.filename
-                                })}
-                                className="ml-2 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-black border border-gray-300 transition-colors flex items-center space-x-1"
-                                title="Preview document"
-                              >
-                                <EyeIcon className="h-3 w-3" />
-                                <span>View</span>
-                              </button>
-                            )}
-                          </div>
-                          <div className="text-gray-600 leading-relaxed">
-                            {source.chunk_text?.substring(0, 120)}...
-                          </div>
-                          {source.similarity && (
-                            <div className="mt-1 text-xs text-gray-400">
-                              Relevance: {Math.round(source.similarity * 100)}%
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )}
 
