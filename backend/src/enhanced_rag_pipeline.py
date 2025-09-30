@@ -23,6 +23,7 @@ from backend.src.hybrid_search import HybridSearchEngine, SearchResult, Document
 from backend.src.reranker import AdvancedReranker, RankedResult
 from backend.src.enhanced_embeddings import EnhancedEmbeddingManager
 from backend.src.smart_chunker import SmartDocumentChunker
+from src.similarity_search import HybridSimilarityEngine
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +36,19 @@ class EnhancedRAGPipeline:
         # Use enhanced embedding manager if available, fallback to original
         if embedding_manager:
             self.embedding_manager = embedding_manager
+        else:
+            self.embedding_manager = EmbeddingManager(db_manager)
         self.enhanced_embedding_manager = EnhancedEmbeddingManager(db_manager)
 
-        # Initialize advanced components
+        # Initialize NEW hybrid similarity engine (cosine + dot product)
+        self.hybrid_similarity = HybridSimilarityEngine(
+            db_manager=db_manager,
+            embedding_manager=self.embedding_manager,
+            candidate_pool=50,
+            cosine_weight=0.7
+        )
+
+        # Keep old hybrid search for backward compatibility (TF-IDF based)
         self.hybrid_search = HybridSearchEngine(db_manager, self.enhanced_embedding_manager)
         self.reranker = AdvancedReranker(db_manager)
         self.smart_chunker = SmartDocumentChunker()

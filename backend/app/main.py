@@ -636,8 +636,8 @@ async def hybrid_search(search_request: HybridSearchRequest):
         if "rag_pipeline" not in components:
             raise HTTPException(status_code=503, detail="System not initialized")
 
-        # Access the hybrid search engine from the RAG pipeline
-        hybrid_engine = components["rag_pipeline"].hybrid_search
+        # Access the NEW hybrid similarity engine from the EnhancedRAG pipeline
+        hybrid_engine = components["rag_pipeline"].hybrid_similarity
 
         # Update engine parameters if provided
         if search_request.candidate_pool != hybrid_engine.candidate_pool:
@@ -680,7 +680,7 @@ async def hybrid_search(search_request: HybridSearchRequest):
         }
 
     except Exception as e:
-        logger.error(f"Hybrid search error: {e}")
+        logger.error(f"Hybrid search error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/global-search", response_model=GlobalSearchResponse)
