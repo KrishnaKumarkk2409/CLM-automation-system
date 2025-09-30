@@ -123,7 +123,7 @@ Instructions:
 
     def query(self, question: str, max_results: int = 10,
               use_hybrid_search: bool = True, use_reranking: bool = False,
-              user_context: Dict[str, Any] = None) -> Dict[str, Any]:
+              user_context: Dict[str, Any] = None, source_relevance_threshold: float = 0.55) -> Dict[str, Any]:
         """
         Process query using enhanced RAG pipeline with advanced search and ranking
 
@@ -133,6 +133,7 @@ Instructions:
             use_hybrid_search: Whether to use hybrid search (dense + sparse)
             use_reranking: Whether to apply advanced re-ranking
             user_context: Optional user context for personalization
+            source_relevance_threshold: Minimum relevance score to include in sources (default: 0.55)
 
         Returns:
             Enhanced response with detailed metadata and explanations
@@ -187,8 +188,10 @@ Instructions:
                 final_results = self._convert_to_ranked_results(search_results[:max_results])
                 reranking_applied = False
 
-            # Step 3: Context preparation with enhanced metadata
-            context, sources, metadata = self._prepare_enhanced_context(final_results, question)
+            # Step 3: Context preparation with enhanced metadata (with relevance filtering)
+            context, sources, metadata = self._prepare_enhanced_context(
+                final_results, question, relevance_threshold=source_relevance_threshold
+            )
 
             # Step 4: Query classification for enhanced prompting
             query_type = self._classify_enhanced_query(question)
@@ -325,8 +328,14 @@ Instructions:
 
         return ranked_results
 
-    def _prepare_enhanced_context(self, results: List[RankedResult], question: str) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
-        """Prepare enhanced context with detailed metadata"""
+    def _prepare_enhanced_context(self, results: List[RankedResult], question: str, relevance_threshold: float = 0.55) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
+        """Prepare enhanced context with detailed metadata
+
+        Args:
+            results: Ranked search results
+            question: User query
+            relevance_threshold: Minimum relevance score to include in sources (default: 0.55)
+        """
         context_parts = []
         sources = []
 
@@ -334,8 +343,15 @@ Instructions:
         total_confidence = 0.0
         relevance_distribution = {}
         temporal_relevance_count = 0
+        filtered_count = 0
 
         for i, result in enumerate(results):
+            # Filter by relevance threshold
+            if result.reranked_score < relevance_threshold:
+                filtered_count += 1
+                logger.debug(f"Filtered out source {i+1} with relevance {result.reranked_score:.3f} (below threshold {relevance_threshold})")
+                continue
+
             # Get document information
             document = self.db_manager.get_document_by_id(result.document_id)
             if document:
@@ -348,8 +364,11 @@ Instructions:
                 # Enhanced context formatting with metadata
                 confidence_indicator = "🔥" if result.reranked_score > 0.8 else "✓" if result.reranked_score > 0.6 else "~"
 
+                # Use the current length of sources as the source number (for filtered results)
+                source_num = len(sources) + 1
+
                 context_part = f"""
-[Source {i+1} {confidence_indicator} Relevance: {result.reranked_score:.1%}]
+[Source {source_num} {confidence_indicator} Relevance: {result.reranked_score:.1%}]
 Document: {document['filename']}
 Section: {section_title}
 Content: {chunk_text}
@@ -359,7 +378,7 @@ Content: {chunk_text}
 
                 # Enhanced source information
                 source_info = {
-                    "id": i + 1,
+                    "id": source_num,
                     "filename": document['filename'],
                     "document_id": result.document_id,
                     "relevance_score": round(result.reranked_score, 3),
@@ -391,13 +410,17 @@ Content: {chunk_text}
 
         # Enhanced metadata
         metadata = {
-            "average_confidence": total_confidence / len(results) if results else 0.0,
+            "average_confidence": total_confidence / len(sources) if sources else 0.0,
             "relevance_distribution": relevance_distribution,
             "temporal_relevance_count": temporal_relevance_count,
             "high_confidence_results": sum(1 for r in results if r.reranked_score > 0.8),
             "context_length": len(context),
-            "source_count": len(sources)
+            "source_count": len(sources),
+            "filtered_count": filtered_count,
+            "total_results": len(results)
         }
+
+        logger.info(f"Prepared context: {len(sources)} relevant sources (filtered {filtered_count} below threshold {relevance_threshold})")
 
         return context, sources, metadata
 
