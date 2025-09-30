@@ -122,7 +122,7 @@ Instructions:
         logger.info("Enhanced RAG pipeline initialized with advanced components")
 
     def query(self, question: str, max_results: int = 10,
-              use_hybrid_search: bool = True, use_reranking: bool = True,
+              use_hybrid_search: bool = True, use_reranking: bool = False,
               user_context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Process query using enhanced RAG pipeline with advanced search and ranking
@@ -154,23 +154,35 @@ Instructions:
             if not search_results:
                 return self._create_no_results_response(question)
 
-            # Step 2: Advanced re-ranking
+            # Step 2: Advanced re-ranking (disabled by default for performance)
             if use_reranking:
-                ranked_results = self.reranker.rerank_results(
-                    question,
-                    self._convert_search_results(search_results),
-                    user_context
-                )
+                try:
+                    logger.info(f"Applying reranking to {len(search_results)} search results")
+                    ranked_results = self.reranker.rerank_results(
+                        question,
+                        self._convert_search_results(search_results),
+                        user_context
+                    )
 
-                # Measure re-ranking improvement
-                original_avg_score = sum(r.original_score for r in ranked_results) / len(ranked_results)
-                reranked_avg_score = sum(r.reranked_score for r in ranked_results) / len(ranked_results)
+                    # Measure re-ranking improvement
+                    if ranked_results:
+                        original_avg_score = sum(r.original_score for r in ranked_results) / len(ranked_results)
+                        reranked_avg_score = sum(r.reranked_score for r in ranked_results) / len(ranked_results)
 
-                if reranked_avg_score > original_avg_score:
-                    self.performance_metrics['reranking_improvements'] += 1
+                        if reranked_avg_score > original_avg_score:
+                            self.performance_metrics['reranking_improvements'] += 1
 
-                reranking_applied = True
-                final_results = ranked_results[:max_results]
+                        reranking_applied = True
+                        final_results = ranked_results[:max_results]
+                        logger.info(f"Reranking completed successfully")
+                    else:
+                        logger.warning("Reranking returned no results, falling back to original")
+                        final_results = self._convert_to_ranked_results(search_results[:max_results])
+                        reranking_applied = False
+                except Exception as e:
+                    logger.warning(f"Reranking failed: {e}, using original search results")
+                    final_results = self._convert_to_ranked_results(search_results[:max_results])
+                    reranking_applied = False
             else:
                 final_results = self._convert_to_ranked_results(search_results[:max_results])
                 reranking_applied = False
@@ -266,16 +278,30 @@ Instructions:
 
         return converted_results
 
-    def _convert_to_ranked_results(self, search_results: List[Dict[str, Any]]) -> List[RankedResult]:
+    def _convert_to_ranked_results(self, search_results) -> List[RankedResult]:
         """Convert search results to RankedResult format without re-ranking"""
         from src.reranker import RankedResult, RerankingFeatures
 
         ranked_results = []
 
         for result in search_results:
+            # Handle both SearchResult objects and dictionaries
+            if hasattr(result, 'hybrid_score'):
+                # It's a SearchResult object from hybrid_search
+                similarity = result.hybrid_score
+                document_id = result.document_id
+                chunk_text = result.chunk_text
+                metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            else:
+                # It's a dictionary
+                similarity = result.get('similarity', 0.0)
+                document_id = result.get('document_id', '')
+                chunk_text = result.get('chunk_text', '')
+                metadata = result.get('metadata', {})
+
             # Create minimal features
             features = RerankingFeatures(
-                semantic_similarity=result.get('similarity', 0.0),
+                semantic_similarity=similarity,
                 keyword_match_score=0.5,
                 document_relevance=0.5,
                 temporal_relevance=0.5,
@@ -286,13 +312,13 @@ Instructions:
             )
 
             ranked_result = RankedResult(
-                document_id=result.get('document_id', ''),
-                chunk_text=result.get('chunk_text', ''),
-                original_score=result.get('similarity', 0.0),
-                reranked_score=result.get('similarity', 0.0),
+                document_id=document_id,
+                chunk_text=chunk_text,
+                original_score=similarity,
+                reranked_score=similarity,
                 features=features,
-                chunk_metadata=result.get('metadata', {}),
-                ranking_explanation="Traditional similarity-based ranking"
+                chunk_metadata=metadata,
+                ranking_explanation="Hybrid similarity-based ranking (cosine + sparse)"
             )
 
             ranked_results.append(ranked_result)
