@@ -247,6 +247,28 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get document {document_id}: {e}")
             return None
+
+    def get_document_chunks(self, document_id: str, include_embeddings: bool = False,
+                             limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch chunks for a document, optionally including embeddings"""
+        try:
+            fields = 'id, document_id, chunk_text, chunk_index, metadata'
+            if include_embeddings:
+                fields += ', embedding'
+
+            query = self.client.table('document_chunks')\
+                .select(fields)\
+                .eq('document_id', document_id)\
+                .order('chunk_index')
+
+            if limit:
+                query = query.limit(max(limit, 1))
+
+            result = query.execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Failed to fetch chunks for document {document_id}: {e}")
+            return []
     
     def get_similar_documents(self, document_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Find documents similar to the given document"""
@@ -316,7 +338,10 @@ class DatabaseManager:
                 return message_id
             return None
         except Exception as e:
-            logger.error(f"Failed to insert chat message: {e}")
+            if self._is_missing_table_error(e, 'chat_messages'):
+                logger.warning("chat_messages table missing; skipping chat persistence")
+            else:
+                logger.error(f"Failed to insert chat message: {e}")
             return None
 
     def get_chat_history(self, conversation_id: str = None, user_id: str = None,
@@ -368,7 +393,10 @@ class DatabaseManager:
                 }
             }
         except Exception as e:
-            logger.error(f"Failed to get chat history: {e}")
+            if self._is_missing_table_error(e, 'chat_messages'):
+                logger.warning("chat_messages table missing; returning empty history")
+            else:
+                logger.error(f"Failed to get chat history: {e}")
             return {
                 "messages": [],
                 "pagination": {
@@ -396,3 +424,8 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to create chat session: {e}")
             return None
+
+    def _is_missing_table_error(self, error: Exception, table_name: str) -> bool:
+        """Detect Supabase schema cache errors when optional tables are absent"""
+        error_text = str(error).lower()
+        return 'pgrst205' in error_text and table_name in error_text

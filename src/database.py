@@ -265,6 +265,28 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get document {document_id}: {e}")
             return None
+
+    def get_document_chunks(self, document_id: str, include_embeddings: bool = False,
+                             limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch chunks for a document, optionally including embeddings"""
+        try:
+            fields = 'id, document_id, chunk_text, chunk_index, metadata'
+            if include_embeddings:
+                fields += ', embedding'
+
+            query = self.client.table('document_chunks')\
+                .select(fields)\
+                .eq('document_id', document_id)\
+                .order('chunk_index')
+
+            if limit:
+                query = query.limit(max(limit, 1))
+
+            result = query.execute()
+            return result.data or []
+        except Exception as e:
+            logger.error(f"Failed to fetch chunks for document {document_id}: {e}")
+            return []
     
     def get_similar_documents(self, document_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Find documents similar to the given document"""

@@ -25,7 +25,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from src.config import Config
 from src.database import DatabaseManager
 from src.embeddings import EmbeddingManager
-from src.rag_pipeline import RAGPipeline
+from backend.src.assistant_agent import AssistantAgent
+from backend.src.enhanced_rag_pipeline import EnhancedRAGPipeline
 from src.contract_agent import ContractAgent
 from src.document_processor import DocumentProcessor
 from src.enhanced_document_processor import EnhancedDocumentProcessor
@@ -169,18 +170,24 @@ async def startup_event():
         # Initialize components
         db_manager = DatabaseManager()
         embedding_manager = EmbeddingManager(db_manager)
-        rag_pipeline = RAGPipeline(db_manager, embedding_manager)
+        rag_pipeline = EnhancedRAGPipeline(db_manager, embedding_manager)
         contract_agent = ContractAgent(db_manager)
         document_processor = DocumentProcessor(db_manager)
         enhanced_document_processor = EnhancedDocumentProcessor(db_manager)
-        
+        assistant_agent = AssistantAgent(
+            rag_pipeline=rag_pipeline,
+            contract_agent=contract_agent,
+            db_manager=db_manager
+        )
+
         components = {
             "db_manager": db_manager,
             "embedding_manager": embedding_manager,
             "rag_pipeline": rag_pipeline,
             "contract_agent": contract_agent,
             "document_processor": document_processor,
-            "enhanced_document_processor": enhanced_document_processor
+            "enhanced_document_processor": enhanced_document_processor,
+            "assistant_agent": assistant_agent
         }
         
         logger.info("CLM components initialized successfully")
@@ -314,41 +321,23 @@ async def chat_endpoint(chat_request: ChatMessage, request: Request):
         except Exception as e:
             logger.debug(f"Chat persistence setup skipped: {e}")
         
-        # Enhanced AI agent with RAG pipeline as tool
-        query_type = classify_query(chat_request.message)
-        
-        if query_type == "greeting":
-            response_data = handle_greeting()
-        elif query_type == "help":
-            response_data = handle_help_request()
-        elif query_type == "agent_task":
-            # Use contract agent for administrative/monitoring tasks
-            try:
-                agent_response = components["contract_agent"].query_agent(chat_request.message)
-                response_data = {
-                    "answer": f"🤖 **Contract Agent**: {agent_response}",
-                    "sources": []
-                }
-            except Exception as e:
-                logger.error(f"Agent query failed: {e}")
-                response_data = {
-                    "answer": "I apologize, but I encountered an issue processing your administrative request. Please try rephrasing your question.",
-                    "sources": []
-                }
-        else:
-            # Use RAG pipeline for document-focused queries
-            try:
-                response_data = components["rag_pipeline"].query(chat_request.message)
-                # Add AI agent context to the response
-                if response_data.get("sources"):
-                    response_data["answer"] = f"📚 **Document Search Results**: {response_data['answer']}"
-            except Exception as e:
-                logger.error(f"RAG query failed: {e}")
-                response_data = {
-                    "answer": "I'm having trouble searching the documents right now. Please try again or rephrase your question.",
-                    "sources": []
-                }
-        
+        # Use assistant agent to determine whether RAG search is needed
+        if "assistant_agent" not in components:
+            raise HTTPException(status_code=503, detail="Assistant agent not initialized")
+
+        try:
+            response_data = components["assistant_agent"].handle_message(
+                chat_request.message,
+                conversation_id=conversation_id,
+                user_id=user_id
+            )
+        except Exception as e:
+            logger.error(f"Assistant agent failed: {e}")
+            response_data = {
+                "answer": "I encountered an issue while processing your request. Please try again shortly.",
+                "sources": []
+            }
+
         # Broadcast to WebSocket connections if any
         if conversation_id in manager.conversation_sessions:
             await manager.broadcast_to_conversation(
@@ -423,7 +412,10 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             # Process the message
             if message_data.get("type") == "chat":
                 # Process chat message
-                response_data = components["rag_pipeline"].query(message_data["message"])
+                agent = components.get("assistant_agent")
+                if not agent:
+                    raise RuntimeError("Assistant agent not initialized")
+                response_data = agent.handle_message(message_data["message"], conversation_id)
                 
                 # Send response back
                 await manager.send_personal_message(
@@ -723,6 +715,69 @@ async def global_search(search_request: GlobalSearchRequest):
     except Exception as e:
         logger.error(f"Global search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/documents/{document_a}/compare/{document_b}")
+async def compare_documents(document_a: str, document_b: str,
+                            aggregation: str = "mean", top_k: int = 3):
+    """Return similarity details between two documents"""
+    try:
+        if "rag_pipeline" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        top_k = max(1, min(top_k, 5))
+        result = components["rag_pipeline"].document_similarity(
+            document_a=document_a,
+            document_b=document_b,
+            aggregation=aggregation,
+            top_k=top_k
+        )
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Similarity data not available for provided documents")
+
+        return result
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Document comparison failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to compute document similarity")
+
+
+@app.get("/documents/{document_id}/similar")
+async def similar_documents(document_id: str, limit: int = 5,
+                            aggregation: str = "mean", top_k: int = 3):
+    """Return documents similar to the reference document"""
+    try:
+        if "rag_pipeline" not in components:
+            raise HTTPException(status_code=503, detail="System not initialized")
+
+        limit = max(1, min(limit, 10))
+        top_k = max(1, min(top_k, 5))
+
+        results = components["rag_pipeline"].compare_document_to_corpus(
+            reference_document_id=document_id,
+            limit=limit,
+            aggregation=aggregation,
+            top_k=top_k
+        )
+
+        return {
+            "document_id": document_id,
+            "aggregation": aggregation,
+            "similar_documents": results
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Similar documents lookup failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch similar documents")
 
 @app.post("/generate-report")
 async def generate_report(report_request: ReportRequest):
@@ -1399,93 +1454,6 @@ async def api_upload_documents(
     except Exception as e:
         logger.error(f"API upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# Helper functions
-def classify_query(prompt: str) -> str:
-    """Classify the type of user query"""
-    prompt_lower = prompt.lower().strip()
-    
-    greeting_patterns = [
-        'hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon'
-    ]
-    
-    help_patterns = [
-        'help', 'how do i', 'how to', 'what can you do'
-    ]
-    
-    agent_patterns = [
-        'expiring', 'expire', 'conflict', 'summary', 'monitor', 'report'
-    ]
-    
-    if any(pattern in prompt_lower for pattern in greeting_patterns):
-        return "greeting"
-    elif any(pattern in prompt_lower for pattern in help_patterns):
-        return "help"
-    elif any(pattern in prompt_lower for pattern in agent_patterns):
-        return "agent_task"
-    else:
-        return "document_query"
-
-def handle_greeting() -> Dict[str, Any]:
-    """Handle greeting messages"""
-    greeting_response = """
-    Hello! 👋 Welcome to the Contract Lifecycle Management System. 
-    
-    I'm here to help you with your contract-related questions. You can ask me about:
-    • Contract expiration dates and renewals
-    • Contract analysis and key terms
-    • Document search and similarity
-    • Compliance and risk assessment
-    • Contract analytics and reporting
-    
-    What would you like to know about your contracts today?
-    """
-    
-    return {
-        "answer": greeting_response,
-        "sources": []
-    }
-
-def handle_help_request() -> Dict[str, Any]:
-    """Handle help requests"""
-    help_response = """
-    🎯 **I'm your Contract Lifecycle Management Assistant!**
-    
-    **My capabilities include:**
-    
-    📋 **Contract Analysis**
-    • Analyze contract content and terms
-    • Extract key information from documents
-    • Compare contracts and identify similarities
-    
-    📅 **Contract Monitoring**
-    • Track contract expiration dates
-    • Monitor upcoming renewals
-    • Generate daily reports on contract status
-    
-    ⚠️ **Risk Management**
-    • Identify potential contract conflicts
-    • Flag important clauses and terms
-    • Highlight compliance issues
-    
-    📊 **Analytics & Insights**
-    • Generate contract summaries
-    • Visualize contract timelines
-    • Show department-wise contract distribution
-    
-    **How to get started:**
-    1. Ask me questions about your contracts
-    2. Upload new documents for analysis
-    3. Request reports and analytics
-    4. Search for specific contract information
-    
-    Try asking me something like: "Show me contracts expiring this month" or "What are the key terms in the TechCorp agreement?"
-    """
-    
-    return {
-        "answer": help_response,
-        "sources": []
-    }
 
 if __name__ == "__main__":
     import uvicorn
