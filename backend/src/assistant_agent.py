@@ -55,8 +55,7 @@ class AssistantAgent:
     }
 
     SMALLTALK_RESPONSES = [
-        "I'm ready whenever you want to dig into your contracts.",
-        "Just let me know if I should summarise a document or check a renewal window.",
+        "I'm Padaku.ai how can i help-you?",
     ]
 
     SMALLTALK_KEYWORDS = {
@@ -169,8 +168,8 @@ class AssistantAgent:
 
     def _greeting_response(self) -> Dict[str, any]:
         answer = (
-            "Hello! I'm your Contract Lifecycle Management assistant. "
-            "Ask me to analyse agreements, track renewals, or compare documents."
+            "Hello! I'm Padaku.ai RAG assistant. "
+            "Ask me anything about NCERT Books"
         )
         return {"answer": answer, "sources": [], "metadata": {"intent": "greeting"}}
 
