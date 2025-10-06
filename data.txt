@@ -1,0 +1,77 @@
+Changes Applied:
+I’ve updated the pipeline with a hybrid similarity scoring mechanism. The main idea is to combine cosine similarity and dot product for ranking embeddings fetched from Supabase. The workflow is as follows:
+
+Compute both similarity metrics in Python.
+
+Scale the dot product using min-max normalization to align it with the cosine similarity range.
+
+Combine the scores (70% cosine similarity, 30% scaled dot product).
+
+Filter results using a cosine threshold.
+
+The implementation is organized using dataclasses and a SimilarityEngine class to encapsulate embedding, querying, and re-ranking logic. Optional RAG integration is included for contextual answers. Best practices like L2 normalization and proper handling of vector DB constraints are applied.
+
+Implementation Details:
+
+1. Cosine Similarity (70% weight)
+
+def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+    denominator = l2_norm(a) * l2_norm(b)
+    if denominator == 0:
+        return 0.0
+    return dot_product(a, b) / denominator
+Measures the angle between vectors (range: 0 to 1).
+
+Normalized by vector lengths, ignoring magnitude.
+
+Captures semantic similarity regardless of document length.
+
+2. Dot Product (30% weight, after scaling)
+
+Computes sum of element-wise multiplication.
+
+Biased by magnitude—longer/more detailed chunks score higher.
+
+Scaled to [0,1] using min-max normalization to combine fairly with cosine scores.
+
+3. Min-Max Scaling
+
+def min_max_scale(values: Sequence[float]) -> List[float]:
+    if not values:
+        return []
+    v_min = min(values)
+    v_max = max(values)
+    if math.isclose(v_max, v_min):
+        return [0.5 for _ in values]
+    return [(v - v_min) / (v_max - v_min) for v in values]
+4. Final Hybrid Score
+
+scaled_dots = min_max_scale(dot_scores)
+result.rerank_score = (
+    self.cosine_weight * result.similarity_cosine +
+    (1 - self.cosine_weight) * scaled_dot
+)
+Combines 70% semantic similarity and 30% magnitude/detail.
+
+Balances finding semantically relevant chunks that also carry substantial content.
+
+Why This Works Better:
+
+Cosine alone: treats short and long chunks equally, ignoring content richness.
+
+Dot product alone: favors long chunks even if less relevant.
+
+Hybrid: ensures relevance and content richness are both considered.
+
+The code integrates this into the RAG pipeline at:
+
+backend/src/similarity_search.py
+
+Called by backend/src/enhanced_rag_pipeline.py:148
+
+Exposed via /search/hybrid endpoint in backend/app/main.py:178
+
+I believe this implementation addresses your question on how similarity search works.
+
+Repo Link: https://github.com/KrishnaKumarkk2409/CLM-automation-system.git
+
